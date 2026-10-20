@@ -37,9 +37,7 @@ export function StatusPanel() {
   const nextDay = () => {
     const d = new Date(date)
     d.setDate(d.getDate() + 1)
-    const game = useGame.getState()
-    game.setTarget(targetFor(d))
-    game.resetAll()
+    useGame.getState().setTarget(targetFor(d))
   }
 
   return (

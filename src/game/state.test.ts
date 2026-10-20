@@ -9,7 +9,6 @@ import {
   dropAt,
   flip,
   hint,
-  nudge,
   orientationFor,
   shapeOf,
   status,
@@ -99,23 +98,6 @@ describe('flip', () => {
     const after = flip(placed, 'L4', { x: 2.5, y: 4.5 }).L4
     expect(after.flips).toBe(1)
     expect(after.spot).toEqual(onBoard(3, 0)) // ..X / XXX → cells (3,2) (4,0) (4,1) (4,2)
-  })
-})
-
-describe('nudge', () => {
-  it('moves a placed piece one cell when the new slot is free', () => {
-    const placed = table({ L4: { spot: onBoard(3, 2) } })
-    expect(nudge(placed, 'L4', 1, 0).L4.spot).toEqual(onBoard(3, 3))
-  })
-
-  it('lines a loose piece up with the grid so it can reach the board', () => {
-    const loose = table({ L4: { spot: { kind: 'loose', x: 2.4, y: 3.3 } } })
-    expect(nudge(loose, 'L4', 1, 0).L4.spot).toEqual(onBoard(3, 3))
-  })
-
-  it('lets the piece rest on top when the new slot is taken', () => {
-    const placed = table({ L4: { spot: onBoard(4, 0) }, ...I4_ROW6 })
-    expect(nudge(placed, 'L4', 0, 1).L4.spot).toEqual({ kind: 'loose', x: 0, y: 5 })
   })
 })
 

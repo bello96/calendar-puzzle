@@ -131,13 +131,6 @@ export function flip(pieces: PieceMap, id: PieceId, pivot: Point): PieceMap {
   return reposition(pieces, { ...p, flips: p.flips + 1 }, mirrorPoint(centerOf(p), pivot.x), cellUnder(p, pivot))
 }
 
-/** Move a piece by whole cells (keyboard), lining it up with the grid first. */
-export function nudge(pieces: PieceMap, id: PieceId, dx: number, dy: number): PieceMap {
-  const p = pieces[id]
-  const tl = topLeftOf(p)
-  return { ...pieces, [id]: settle(pieces, p, { x: Math.round(tl.x) + dx, y: Math.round(tl.y) + dy }) }
-}
-
 export function openCells(pieces: PieceMap): Cell[] {
   const taken = takenBy(pieces)
   return BOARD_CELLS.filter(([r, c]) => !taken(r, c))

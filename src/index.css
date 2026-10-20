@@ -9,8 +9,9 @@
   /* Chalk-white type on the mat */
   --color-chalk: #eef1e6;
   --color-chalk-dim: rgb(238 241 230 / 0.66);
-  /* Basswood and its laser burn */
+  /* Basswood and its laser burn; the pieces a shade deeper than the board */
   --color-wood: #e8d4ae;
+  --color-piece: #dfc69c;
   --color-wood-floor: #d9c196;
   --color-wood-side: #b48f5b;
   --color-burn: #4a2e17;

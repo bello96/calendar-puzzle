@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { bounds, mod, type Cell, type Point } from '../game/geometry'
 import { tableLayout, type TableLayout } from '../game/layout'
 import { PIECE_IDS, type PieceId } from '../game/pieces'
+import { overlapping, type Drawn } from '../game/stacking'
 import {
   answerFor,
   cellsOnBoard,
@@ -9,10 +10,8 @@ import {
   dropAt,
   flip,
   hint,
-  nudge,
   shapeOf,
   status,
-  topLeftOf,
   turn,
   type PieceMap,
   type PieceState,
@@ -29,7 +28,7 @@ export type Motion =
   | { kind: 'jump' }
 
 export interface TablePiece extends PieceState {
-  /** Stacking order 0–9; the last piece touched is on top. */
+  /** Stacking order 0–9, in or out of the board; the last piece touched is on top. */
   z: number
   /** Resting angle in degrees for loose pieces (purely cosmetic). */
   tilt: number
@@ -52,8 +51,6 @@ export interface GameState {
   timerDay: string | null
   activeId: PieceId | null
   draggingId: PieceId | null
-  /** How the piece in hand lay before it was picked up, so the drag can be cancelled. */
-  held: Pick<TablePiece, 'id' | 'turns' | 'flips' | 'spot' | 'tilt'> | null
   /** Cells the dragged piece would drop into. */
   ghost: Cell[] | null
   /** A piece to wiggle so the player notices it. */
@@ -72,17 +69,16 @@ export interface GameActions {
   setGhost(cells: Cell[] | null): void
   /** Let go of the dragged piece with its box's top-left at `topLeft`. Returns true if it went into the board. */
   release(id: PieceId, topLeft: Point): boolean
-  /** Put the piece in hand back exactly as it was picked up. */
-  cancelDrag(id: PieceId): void
   /** Turn or flip the piece in hand; its position is owned by the drag until release. */
   reorientInHand(id: PieceId, change: 1 | -1 | 'flip'): void
   turnPiece(id: PieceId, dir: 1 | -1, pivot: Point): void
   flipPiece(id: PieceId, pivot: Point): void
-  nudgePiece(id: PieceId, dx: number, dy: number): void
-  sendHome(id: PieceId): void
+  /** Bring a piece out from under any lying on it, to the top. Returns false, changing nothing, if none do. */
+  raise(id: PieceId): boolean
   resetAll(): void
   showHint(): void
   showAnswer(): void
+  /** Make another day. A different day is a fresh start: every piece goes back to the tray. */
   setTarget(target: TargetChoice): void
   /** Called with the current target day; a new day starts a new timer. */
   trackTarget(day: string): void
@@ -130,21 +126,33 @@ function raised(pieces: Record<PieceId, TablePiece>, ...ids: PieceId[]): Record<
 
 function homePieces(layout: TableLayout, from?: Record<PieceId, TablePiece>, stagger = false): Record<PieceId, TablePiece> {
   const pieces = {} as Record<PieceId, TablePiece>
+  let travelling = 0
   PIECE_IDS.forEach((id, i) => {
     const prev = from?.[id]
     const home = layout.homes[id]
     // Untwist to the nearest matching pose, face up, rather than spinning all the way back.
     const turns = prev ? nearestTurns(prev.turns, home.turns) : home.turns
     const flips = prev ? Math.round(prev.flips / 2) * 2 : 0
-    pieces[id] = {
-      id,
-      turns,
-      flips,
-      spot: { kind: 'loose', x: home.x, y: home.y },
-      z: prev?.z ?? i,
-      tilt: layout.tilts[id],
-      motion: from ? { kind: 'travel', delay: stagger ? i * 0.035 : 0 } : { kind: 'jump' },
-    }
+    const tilt = layout.tilts[id]
+    // One already lying at home stays put, rather than being picked up and set down again.
+    const atHome =
+      prev?.spot.kind === 'loose' &&
+      Math.abs(prev.spot.x - home.x) < 1e-6 &&
+      Math.abs(prev.spot.y - home.y) < 1e-6 &&
+      prev.turns === turns &&
+      prev.flips === flips &&
+      prev.tilt === tilt
+    pieces[id] = atHome
+      ? prev
+      : {
+          id,
+          turns,
+          flips,
+          spot: { kind: 'loose', x: home.x, y: home.y },
+          z: prev?.z ?? i,
+          tilt,
+          motion: from ? { kind: 'travel', delay: stagger ? travelling++ * 0.035 : 0 } : { kind: 'jump' },
+        }
   })
   return pieces
 }
@@ -162,6 +170,11 @@ function onTable(p: TablePiece, layout: TableLayout): TablePiece {
   const cy = Math.min(Math.max(center.y, mat.top + (rows * s) / 2), mat.bottom - (rows * s) / 2)
   if (cx === center.x && cy === center.y) return p
   return { ...p, spot: { kind: 'loose', x: cx - cols / 2, y: cy - rows / 2 } }
+}
+
+/** The piece as drawn: pieces lying in a phone's tray are drawn smaller. */
+function drawn(p: TablePiece, layout: TableLayout): Drawn {
+  return { ...p, scale: p.spot.kind === 'loose' && layout.inTray(centerOf(p)) ? layout.trayScale : 1 }
 }
 
 /** Place a loose piece so its centre stays put after its box changes shape. */
@@ -203,7 +216,6 @@ export const useGame = create<Store>()((set, get) => {
     timerDay: initial?.timerDay ?? null,
     activeId: null,
     draggingId: null,
-    held: null,
     ghost: null,
     attention: null,
     notice: null,
@@ -248,7 +260,6 @@ export const useGame = create<Store>()((set, get) => {
       set({
         draggingId: id,
         activeId: id,
-        held: { id, turns: p.turns, flips: p.flips, spot: p.spot, tilt: p.tilt },
         pieces: raised({ ...get().pieces, [id]: { ...p, tilt: 0 } }, id),
       })
     },
@@ -263,19 +274,8 @@ export const useGame = create<Store>()((set, get) => {
       const next = dropAt(plain(get().pieces), id, topLeft)
       const placed = next[id].spot.kind === 'board'
       update(id, next, { tilt: placed ? 0 : randomTilt(), motion: { kind: 'settle' } })
-      set({ draggingId: null, ghost: null, held: null })
+      set({ draggingId: null, ghost: null })
       return placed
-    },
-
-    cancelDrag(id) {
-      const { held, pieces } = get()
-      if (held?.id === id) {
-        // Back in the pose it was picked up in, at the spot it came from (if that spot is still free).
-        const restored = { ...pieces, [id]: { ...pieces[id], turns: held.turns, flips: held.flips, tilt: held.tilt } }
-        const back = dropAt(plain(restored), id, topLeftOf({ ...restored[id], spot: held.spot }))
-        set({ pieces: { ...restored, [id]: { ...restored[id], spot: back[id].spot, motion: { kind: 'settle' } } } })
-      }
-      set({ draggingId: null, ghost: null, held: null })
     },
 
     reorientInHand(id, change) {
@@ -300,15 +300,14 @@ export const useGame = create<Store>()((set, get) => {
       update(id, next, { tilt: next[id].spot.kind === 'board' ? 0 : p.tilt, motion: { kind: 'flip', pivot } })
     },
 
-    nudgePiece(id, dx, dy) {
-      begin()
-      const next = nudge(plain(get().pieces), id, dx, dy)
-      update(id, next, { tilt: 0, motion: { kind: 'settle' } })
-    },
-
-    sendHome(id) {
-      const home = homePieces(get().layout, get().pieces)[id]
-      set({ pieces: { ...get().pieces, [id]: { ...home, motion: { kind: 'travel', delay: 0 } } } })
+    raise(id) {
+      const { pieces, layout } = get()
+      const piece = drawn(pieces[id], layout)
+      const under = PIECE_IDS.some(
+        (other) => pieces[other].z > pieces[id].z && overlapping(piece, drawn(pieces[other], layout)),
+      )
+      if (under) set({ pieces: raised(pieces, id) })
+      return under
     },
 
     resetAll() {
@@ -374,7 +373,9 @@ export const useGame = create<Store>()((set, get) => {
     },
 
     setTarget(target) {
+      const changed = dayKey(targetDate(target)) !== dayKey(targetDate(get().target))
       set({ target })
+      if (changed) get().resetAll()
     },
 
     trackTarget(day) {

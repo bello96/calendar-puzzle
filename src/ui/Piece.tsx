@@ -16,6 +16,7 @@ import { centerOf, isFlipped, shapeOf, takenBy, topLeftOf } from '../game/state'
 import { useGame, type TablePiece } from '../state/store'
 import { play } from './sound'
 import { useTable } from './table-context'
+import { woodMarks } from './WoodDefs'
 
 /** Gap left around each piece, like the kerf of the laser cut. */
 const KERF = 0.035
@@ -33,9 +34,6 @@ type Stoppable = { stop(): void }
  * table while the first one drags.
  */
 export const inHand: { turn: ((change: Change) => void) | null } = { turn: null }
-
-/** Each piece's keyboard handler; the table sends keys to the active piece. */
-export const pieceKeys = new Map<PieceId, (e: KeyboardEvent) => void>()
 
 /** The piece being pressed or dragged. One at a time: a second finger never picks up a second piece. */
 let pressed: PieceId | null = null
@@ -122,6 +120,7 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
   const def = PIECE_BY_ID[id]
   const box = useMemo(() => bounds(def.cells), [def])
   const face = useMemo(() => roundedPath(outlinePolygon(def.cells, KERF), 0.07, 0.035), [def])
+  const marks = useMemo(() => woodMarks(id), [id])
 
   /** Drawn smaller while lying in a phone's tray, full size everywhere else. */
   const sizeFor = (piece: TablePiece) =>
@@ -158,7 +157,6 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
 
   const session = useRef<Session | null>(null)
   const lastPointerType = useRef('mouse')
-  const wheel = useRef({ acc: 0, lastTurn: 0, lastEvent: 0 })
   const moves = useRef<Stoppable[]>([])
   const lift = useRef<AnimationPlaybackControls | null>(null)
   const grow = useRef<AnimationPlaybackControls | null>(null)
@@ -310,7 +308,6 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
     const f0 = flipDeg.get()
     const a1 = piece.turns * 90
     const f1 = piece.flips * 180
-    play('turn')
     const step = (k: number) => {
       const r = rotateBy(from, sweep * k)
       s.offset = { x: r.x + fix.x * k, y: r.y + fix.y * k }
@@ -352,20 +349,15 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
     }
     setElev(2)
     inHand.turn = turnInHand
-    play('lift')
   }
 
-  /** Let go: drop where the pointer is, or put the piece back as it was if `cancel`. */
-  const endDrag = (s: Session, cancel: boolean) => {
+  /** Let go: drop the piece where the pointer is. */
+  const endDrag = (s: Session) => {
     // The handler stored at pick-up belongs to an older render, so clear it outright.
     inHand.turn = null
     if (session.current === s) session.current = null
     if (pressed === id) pressed = null
     const state = useGame.getState()
-    if (cancel) {
-      state.cancelDrag(id)
-      return
-    }
     const { rows, cols } = bounds(shapeOf(state.pieces[id]))
     // Never leave a piece out of reach.
     const v = viewRef.current.visible
@@ -376,15 +368,26 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
     if (state.release(id, { x: center.x - cols / 2, y: center.y - rows / 2 })) play('place')
   }
 
-  /** Turn (or flip) where the piece lies, around the cell nearest `point`. */
+  /**
+   * Turn (or flip) where the piece lies, around the cell nearest `point`. Only
+   * a piece with nothing lying on it turns: one under others first comes up
+   * on top of them, with a little hop, and turns on the next click.
+   */
   const turnHere = (change: Change, point: Point) => {
     const state = useGame.getState()
+    if (state.raise(id)) {
+      if (!reduced) {
+        const height = state.pieces[id].spot.kind === 'board' ? 0 : 1
+        lift.current?.stop()
+        lift.current = animate(elev, [elev.get(), height + 0.5, height], { duration: 0.3, ease: 'easeOut' })
+      }
+      return
+    }
     const piece = state.pieces[id]
     // Judge the pivot against where the piece is coming to rest, even if it is still on its way there.
     const pivot = pivotAt(piece, point, sizeFor(piece))
     if (change === 'flip') state.flipPiece(id, pivot)
     else state.turnPiece(id, change, pivot)
-    play('turn')
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -420,7 +423,7 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
   const finish = (e: React.PointerEvent, tap: boolean) => {
     const s = session.current
     if (!s || s.pointerId !== e.pointerId) return
-    if (s.dragging) return endDrag(s, false)
+    if (s.dragging) return endDrag(s)
     session.current = null
     if (pressed === id) pressed = null
     if (tap) turnHere(1, s.pointer)
@@ -434,72 +437,8 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
     else turnHere('flip', viewRef.current.toWorld(e.clientX, e.clientY))
   }
 
-  const onWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey) return
-    const w = wheel.current
-    const now = performance.now()
-    if (now - w.lastEvent > 250) w.acc = 0
-    w.lastEvent = now
-    w.acc += e.deltaMode === 1 ? e.deltaY * 30 : e.deltaY
-    if (Math.abs(w.acc) < 40 || now - w.lastTurn < 150) return
-    const dir = w.acc > 0 ? 1 : -1
-    w.acc = 0
-    w.lastTurn = now
-    if (session.current?.dragging) turnInHand(dir)
-    else turnHere(dir, viewRef.current.toWorld(e.clientX, e.clientY))
-  }
-
-  /** Keyboard shortcuts, routed here by the table while this piece is active or in hand. */
-  const onKey = (e: KeyboardEvent) => {
-    const s = session.current
-    const state = useGame.getState()
-    const piece = state.pieces[id]
-    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
-    const change: Change | 0 = key === 'e' || key === 'r' ? 1 : key === 'q' ? -1 : key === 'f' ? 'flip' : 0
-    if (change) {
-      e.preventDefault()
-      if (s?.dragging) turnInHand(change)
-      else turnHere(change, centerOf(piece))
-      return
-    }
-    if (key === 'Escape') {
-      e.preventDefault()
-      if (s?.dragging) endDrag(s, true)
-      else state.sendHome(id)
-      return
-    }
-    if (s?.dragging) return
-    const arrows: Record<string, [number, number]> = {
-      ArrowLeft: [-1, 0],
-      ArrowRight: [1, 0],
-      ArrowUp: [0, -1],
-      ArrowDown: [0, 1],
-    }
-    if (key in arrows) {
-      e.preventDefault()
-      state.nudgePiece(id, ...arrows[key])
-      if (useGame.getState().pieces[id].spot.kind === 'board') play('place')
-    } else if (key === 'Enter' || key === ' ') {
-      e.preventDefault()
-      turnHere(1, centerOf(piece))
-    } else if (key === 'Delete' || key === 'Backspace') {
-      e.preventDefault()
-      state.sendHome(id)
-    }
-  }
-
-  const keyHandler = useRef(onKey)
-  useLayoutEffect(() => {
-    keyHandler.current = onKey
-  })
-  useEffect(() => {
-    pieceKeys.set(id, (e) => keyHandler.current(e))
-    return () => {
-      pieceKeys.delete(id)
-    }
-  }, [id])
-
-  const layer = dragging ? 1000 : (p.spot.kind === 'board' ? 10 : 100) + p.z
+  // Stacked by when each piece was last touched, in the board or out of it.
+  const layer = dragging ? 1000 : 10 + p.z
   const where = p.spot.kind === 'board' ? `，在拼盘第${p.spot.row + 1}行第${p.spot.col + 1}列` : '，在桌上'
 
   return (
@@ -515,14 +454,11 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
       onPointerCancel={(e) => finish(e, false)}
       onLostPointerCapture={(e) => finish(e, false)}
       onContextMenu={onContextMenu}
-      onWheel={onWheel}
     >
       <m.div
-        role="button"
-        tabIndex={0}
+        role="img"
         aria-label={`${def.name}拼块${where}`}
-        onFocus={() => useGame.getState().activate(id)}
-        className="h-full w-full rounded-[3px] outline-offset-4 focus-visible:outline-2 focus-visible:outline-chalk"
+        className="h-full w-full"
         style={{ transform: inner, transformOrigin: '50% 50%' }}
       >
         <svg
@@ -533,14 +469,33 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
           className="block"
           style={{ touchAction: 'none' }}
         >
-          {/* Every piece is cut from the same sheet as the board; only the grain differs. */}
+          <defs>
+            <clipPath id={`cut-${id}`}>
+              <path d={face} />
+            </clipPath>
+          </defs>
+          {/* Every piece is cut from the same sheet; only the grain and the odd mark differ. */}
           <path
             d={face}
-            fill="var(--color-wood)"
+            fill="var(--color-piece)"
             className="pointer-events-auto cursor-grab"
             style={{ cursor: dragging ? 'grabbing' : undefined }}
           />
           <path d={face} fill="#fff" filter={`url(#grain-${id})`} className="pointer-events-none" />
+          <g clipPath={`url(#cut-${id})`} className="pointer-events-none">
+            {marks.map((k, i) => (
+              <ellipse
+                key={i}
+                cx={k.cx}
+                cy={k.cy}
+                rx={k.rx}
+                ry={k.ry}
+                transform={`rotate(${k.angle.toFixed(1)} ${k.cx.toFixed(3)} ${k.cy.toFixed(3)})`}
+                fill={`url(#mark-${k.kind})`}
+                opacity={k.opacity}
+              />
+            ))}
+          </g>
           <path d={face} fill="none" stroke="#5b391b" strokeOpacity={0.55} strokeWidth={0.022} className="pointer-events-none" />
         </svg>
       </m.div>

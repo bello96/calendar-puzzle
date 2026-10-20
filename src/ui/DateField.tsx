@@ -99,9 +99,8 @@ function DateText({ value, ...input }: ComponentProps<'input'>) {
 const COMPONENTS = { input: DateText }
 // Lit like a toolbar button on hover, and held lit while the calendar is open. The open
 // calendar is focus enough, so the keyboard ring (antd's outline) only shows while it is shut.
-// The calendar icon only where there is room for it (a phone needs the space for the buttons).
-const CLASS_NAMES = { root: 'hover:bg-chalk/10!', suffix: 'max-sm:hidden!' }
-const OPEN_CLASS_NAMES = { root: 'bg-chalk/10! outline-none!', suffix: 'max-sm:hidden!' }
+const CLASS_NAMES = { root: 'hover:bg-chalk/10!' }
+const OPEN_CLASS_NAMES = { root: 'bg-chalk/10! outline-none!' }
 const STYLES = {
   root: { padding: '4px 6px' },
   suffix: { color: 'var(--color-chalk-dim)', marginInlineStart: 6 },
@@ -125,7 +124,7 @@ export function DateField({ date, onChange }: { date: Date; onChange: (date: Dat
         onBlur={() => (byPointer.current = false)}
         onOpenChange={(next) => {
           setOpen(next)
-          // Done with the mouse: let go of the focus, so the keys work the pieces again.
+          // Done with the mouse: let go of the focus, so its keyboard ring is not left around the date.
           if (!next && byPointer.current) picker.current?.blur()
         }}
         onKeyDown={(e) => {

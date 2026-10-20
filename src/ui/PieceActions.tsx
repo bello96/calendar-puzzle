@@ -2,7 +2,6 @@ import { bounds } from '../game/geometry'
 import { centerOf, shapeOf } from '../game/state'
 import { useGame } from '../state/store'
 import { pivotAt } from './Piece'
-import { play } from './sound'
 import { useTable } from './table-context'
 
 /** On touch screens: turn and flip buttons above the piece last touched. */
@@ -21,7 +20,6 @@ export function PieceActions() {
     const pivot = pivotAt(piece, center, scale)
     if (change === 'flip') game.flipPiece(piece.id, pivot)
     else game.turnPiece(piece.id, 1, pivot)
-    play('turn')
   }
 
   return (

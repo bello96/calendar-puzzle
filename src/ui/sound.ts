@@ -1,7 +1,7 @@
 import { useGame } from '../state/store'
 
 /*
- * Wooden clicks and a small chime, synthesised with Web Audio so the page
+ * A wooden knock and a small chime, synthesised with Web Audio so the page
  * needs no sound files. The context is created lazily on the first gesture.
  */
 
@@ -72,13 +72,10 @@ function bell(ac: AudioContext, freq: number, at: number) {
   }
 }
 
+// Moving pieces about is silent; the only knock is a piece dropping into the board.
 const SOUNDS = {
   /** A piece drops into the board. */
   place: (ac: AudioContext) => knock(ac, 300, 0.32, 0.09),
-  /** A piece is turned or flipped. */
-  turn: (ac: AudioContext) => knock(ac, 760, 0.1, 0.035),
-  /** A piece is picked up. */
-  lift: (ac: AudioContext) => knock(ac, 520, 0.05, 0.03),
   /** The puzzle is solved: a rising marimba-ish triad. */
   solved: (ac: AudioContext) => [523.25, 659.25, 783.99].forEach((f, i) => bell(ac, f, ac.currentTime + i * 0.11)),
 } satisfies Record<string, (ac: AudioContext) => void>

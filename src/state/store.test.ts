@@ -3,7 +3,7 @@ import { bounds } from '../game/geometry'
 import { tableLayout } from '../game/layout'
 import { PIECE_IDS, type PieceId } from '../game/pieces'
 import { answerFor, shapeOf } from '../game/state'
-import { targetFor, useGame, type TablePiece } from './store'
+import { targetDate, targetFor, useGame, type TablePiece } from './store'
 
 const fresh = useGame.getState()
 beforeEach(() => {
@@ -21,10 +21,10 @@ describe('store', () => {
     expect(topmost()).toBe('I4')
   })
 
-  it('brings a piece to the top when it is flipped or moved by keyboard', () => {
+  it('brings a piece to the top when it is flipped or dropped', () => {
     game().flipPiece('U5', { x: 15, y: 4 })
     expect(topmost()).toBe('U5')
-    game().nudgePiece('T5', 1, 0)
+    game().release('T5', { x: 2, y: 3 })
     expect(topmost()).toBe('T5')
   })
 
@@ -47,27 +47,88 @@ describe('store', () => {
     }
   })
 
+  it('leaves the pieces already at home alone when sending the rest back', () => {
+    game().release('L4', { x: 2, y: 3 })
+    const before = game().pieces
+    game().resetAll()
+    // Only the piece that was away travels, and it sets off at once.
+    expect(game().pieces.L4.motion).toEqual({ kind: 'travel', delay: 0 })
+    for (const id of PIECE_IDS) if (id !== 'L4') expect(game().pieces[id]).toBe(before[id])
+  })
+
   it('keeps the stacking order within the ten pieces however long you play', () => {
     for (let i = 0; i < 2000; i++) {
       const id = PIECE_IDS[(i * 7) % 10]
       if (i % 2) game().flipPiece(id, { x: 15, y: 4 })
-      else game().nudgePiece(id, 0, 0)
+      else game().turnPiece(id, 1, { x: 15, y: 4 })
     }
     const zs = PIECE_IDS.map((id) => game().pieces[id].z).sort((a, b) => a - b)
     expect(zs).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     expect(topmost()).toBe(PIECE_IDS[(1999 * 7) % 10])
   })
+})
 
-  it('puts a piece back exactly as it was when the drag is cancelled', () => {
-    game().release('L4', { x: 2, y: 3 })
+describe('raise', () => {
+  /** Lay a piece loose and straight with its box's top-left at (x, y). */
+  const lay = (id: PieceId, x: number, y: number) => {
+    const p = game().pieces[id]
+    useGame.setState({ pieces: { ...game().pieces, [id]: { ...p, turns: 0, flips: 0, tilt: 0, spot: { kind: 'loose', x, y } } } })
+  }
+
+  it('brings a piece out from under another to the top, without moving it', () => {
+    lay('L4', 12, 2)
+    lay('T5', 12.5, 2.5)
     const before = game().pieces.L4
-    game().pickUp('L4')
-    game().reorientInHand('L4', 1)
-    game().reorientInHand('L4', 'flip')
-    game().cancelDrag('L4')
-    const after = game().pieces.L4
-    expect([after.turns, after.flips, after.spot, after.tilt]).toEqual([before.turns, before.flips, before.spot, before.tilt])
-    expect(game().draggingId).toBeNull()
+    expect(game().raise('L4')).toBe(true)
+    expect(topmost()).toBe('L4')
+    expect(game().pieces.L4).toEqual({ ...before, z: 9 })
+    // Now nothing lies on it: the next click turns it.
+    expect(game().raise('L4')).toBe(false)
+  })
+
+  it('leaves a piece with nothing on it as it is', () => {
+    lay('L4', 12, 2)
+    lay('T5', 12.5, 2.5)
+    const before = game().pieces
+    expect(game().raise('T5')).toBe(false)
+    expect(game().raise('I4')).toBe(false)
+    expect(game().pieces).toBe(before)
+  })
+
+  it('stacks pieces in the board and out of it alike', () => {
+    game().release('L4', { x: 2, y: 3 })
+    lay('T5', 2.3, 3.2)
+    // The piece in the board went on top last; the loose one lying across it comes up first...
+    expect(game().raise('T5')).toBe(true)
+    // ...and then the one in the board comes back up over it.
+    expect(game().raise('L4')).toBe(true)
+    expect(topmost()).toBe('L4')
+    expect(game().pieces.L4.spot).toEqual({ kind: 'board', row: 3, col: 2 })
+  })
+
+  it('never finds pieces side by side in the board lying on each other', () => {
+    const { I4, L4 } = game().pieces
+    useGame.setState({
+      pieces: {
+        ...game().pieces,
+        I4: { ...I4, turns: 0, flips: 0, tilt: 0, spot: { kind: 'board', row: 0, col: 0 } },
+        L4: { ...L4, turns: 0, flips: 0, tilt: 0, spot: { kind: 'board', row: 1, col: 0 } },
+      },
+    })
+    expect(game().raise('I4')).toBe(false)
+  })
+
+  it('judges pieces in a phone tray at the size they are drawn', () => {
+    // The bar and the big L overlap at full size, but not drawn at half size in the tray below the board
+    // (off to the side, clear of the other pieces).
+    game().setLayout(tableLayout('tall', 'rows2', 0.5))
+    lay('I4', 20, 10)
+    lay('L5', 20, 10.7)
+    expect(game().raise('I4')).toBe(false)
+    game().setLayout(tableLayout('wide'))
+    lay('I4', 20, 10)
+    lay('L5', 20, 10.7)
+    expect(game().raise('I4')).toBe(true)
   })
 })
 
@@ -100,6 +161,29 @@ describe('showAnswer', () => {
     useGame.setState({ pieces: solved })
     game().showAnswer()
     expect(game().usedAnswer).toBe(false)
+  })
+})
+
+describe('setTarget', () => {
+  it('empties the board for another day, sending every piece back to the tray', () => {
+    game().release('L4', { x: 2, y: 3 })
+    game().release('T5', { x: 3.4, y: 0.2 })
+    useGame.setState({ startedAt: 1 })
+    const tomorrow = targetDate(game().target)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    game().setTarget(targetFor(tomorrow))
+    const homes = tableLayout('wide').homes
+    for (const id of PIECE_IDS) {
+      expect(game().pieces[id].spot).toEqual({ kind: 'loose', x: homes[id].x, y: homes[id].y })
+    }
+    expect(game().startedAt).toBeNull()
+  })
+
+  it('leaves the pieces be when the same day is picked again', () => {
+    game().release('L4', { x: 2, y: 3 })
+    const before = game().pieces
+    game().setTarget(targetFor(targetDate(game().target)))
+    expect(game().pieces).toBe(before)
   })
 })
 

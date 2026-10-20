@@ -4,7 +4,7 @@ import { PIECE_IDS } from '../game/pieces'
 import { dayKey, useGame } from '../state/store'
 import { Board } from './Board'
 import { NoticeToast } from './NoticeToast'
-import { inHand, Piece, pieceKeys } from './Piece'
+import { inHand, Piece } from './Piece'
 import { PieceActions } from './PieceActions'
 import { warmUpSound } from './sound'
 import { StatusPanel } from './StatusPanel'
@@ -65,19 +65,6 @@ export function Table() {
   useEffect(() => {
     if (layout) setLayout(layout)
   }, [layout, setLayout])
-
-  // Shortcuts go to the piece in hand, or else the one last touched, unless typing or on a button.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
-      if ((e.target as Element | null)?.closest?.('input, textarea, select, button, a, [contenteditable="true"]')) return
-      const { activeId, draggingId } = useGame.getState()
-      const id = draggingId ?? activeId
-      if (id) pieceKeys.get(id)?.(e)
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
 
   // Handles for automated browser checks; stripped from production builds.
   useEffect(() => {
@@ -148,9 +135,8 @@ function ControlsHint({ touch }: { touch: boolean }) {
       ]
     : [
         ['拖动', '摆放'],
-        ['单击 / 滚轮', '旋转'],
-        ['右键', '翻面'],
-        ['Q E F', '键盘也行'],
+        ['左键单击', '旋转'],
+        ['右键单击', '翻面'],
       ]
   return (
     <p className="pointer-events-none absolute bottom-2 left-4 flex flex-wrap gap-x-5 gap-y-1 text-[13px] leading-5 text-chalk-dim sm:left-6">

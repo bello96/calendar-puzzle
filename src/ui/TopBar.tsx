@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { PIECE_IDS } from '../game/pieces'
 import { status } from '../game/state'
 import { targetFor, useGame } from '../state/store'
 import { Button } from './Button'
-import { dateParts, formatDate, useTargetDate } from './table-context'
-
-const pad = (n: number) => String(n).padStart(2, '0')
+import { DateField } from './DateField'
+import { useTargetDate } from './table-context'
 
 /**
  * A button that asks again before doing something that throws away the
@@ -51,7 +50,6 @@ export function TopBar() {
   const isToday = useGame((s) => s.target.kind === 'today')
   const placed = useGame((s) => PIECE_IDS.filter((id) => s.pieces[id].spot.kind === 'board').length)
   const sound = useGame((s) => s.sound)
-  const picker = useRef<HTMLInputElement>(null)
 
   const choose = (d: Date) => useGame.getState().setTarget(targetFor(d))
   const shift = (days: number) => {
@@ -63,44 +61,18 @@ export function TopBar() {
 
   return (
     <header className="relative z-20 flex flex-wrap items-center gap-x-4 gap-y-0.5 px-2 pt-2 pb-1 sm:gap-x-6 sm:px-5 sm:pt-3">
-      <div className="flex min-w-0 items-center gap-0.5">
-        <span className="mr-1 shrink-0 pl-1 text-[15px] text-chalk-dim">{isToday ? '拼出今天' : '拼出'}</span>
-        <span className="relative">
-          <button
-            type="button"
-            className="rounded-md px-1.5 py-1 text-[19px] leading-tight font-bold tracking-wide whitespace-nowrap tabular-nums hover:bg-chalk/10 focus-visible:outline-2 focus-visible:outline-chalk sm:text-[22px]"
-            onClick={() => {
-              try {
-                picker.current?.showPicker()
-              } catch {
-                picker.current?.focus()
-              }
-            }}
-            title="选一个日期"
-          >
-            {formatDate(dateParts(date))}
-          </button>
-          <input
-            ref={picker}
-            type="date"
-            tabIndex={-1}
-            aria-hidden
-            className="pointer-events-none absolute inset-x-0 bottom-0 h-0 opacity-0"
-            value={`${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`}
-            onChange={(e) => {
-              const [y, m, d] = e.target.value.split('-').map(Number)
-              if (y && m && d) choose(new Date(y, m - 1, d))
-            }}
-          />
-        </span>
-        <Button aria-label="前一天" title="前一天" className="w-9 px-0! text-xl" onClick={() => shift(-1)}>
+      <div className="flex min-w-0 flex-wrap items-center gap-0.5">
+        {/* A phone has only room for the date (with its year) and the buttons beside it. */}
+        <span className="mr-1 hidden shrink-0 pl-1 text-[15px] text-chalk-dim sm:inline">{isToday ? '拼出今天' : '拼出'}</span>
+        <DateField date={date} onChange={choose} />
+        <Button aria-label="前一天" title="前一天" className="w-9 shrink-0 px-0! text-xl" onClick={() => shift(-1)}>
           ‹
         </Button>
-        <Button aria-label="后一天" title="后一天" className="w-9 px-0! text-xl" onClick={() => shift(1)}>
+        <Button aria-label="后一天" title="后一天" className="w-9 shrink-0 px-0! text-xl" onClick={() => shift(1)}>
           ›
         </Button>
         {!isToday && (
-          <Button className="px-2! sm:px-3!" onClick={() => choose(new Date())}>
+          <Button className="shrink-0 px-2! sm:px-3!" onClick={() => choose(new Date())}>
             <span className="hidden sm:inline">回到</span>今天
           </Button>
         )}

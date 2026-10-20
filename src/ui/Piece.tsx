@@ -20,20 +20,6 @@ import { useTable } from './table-context'
 /** Gap left around each piece, like the kerf of the laser cut. */
 const KERF = 0.035
 
-/** Ten slightly different cuts of basswood. */
-const WOOD: Record<PieceId, string> = {
-  I4: '#ead6b0',
-  L4: '#e6cfa4',
-  S4: '#ecdab8',
-  L5: '#e3c99b',
-  N5: '#e9d3aa',
-  P5: '#eedcbc',
-  T5: '#e2c697',
-  U5: '#e8d1a7',
-  V5: '#e5cca0',
-  Z5: '#ebd7b3',
-}
-
 const SETTLE: ValueAnimationTransition<number> = { type: 'spring', stiffness: 520, damping: 36 }
 const SWING: ValueAnimationTransition<number> = { type: 'spring', stiffness: 380, damping: 25 }
 const TURN_OVER: ValueAnimationTransition<number> = { type: 'spring', stiffness: 240, damping: 24 }
@@ -547,9 +533,10 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
           className="block"
           style={{ touchAction: 'none' }}
         >
+          {/* Every piece is cut from the same sheet as the board; only the grain differs. */}
           <path
             d={face}
-            fill={WOOD[id]}
+            fill="var(--color-wood)"
             className="pointer-events-auto cursor-grab"
             style={{ cursor: dragging ? 'grabbing' : undefined }}
           />

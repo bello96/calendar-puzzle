@@ -96,10 +96,11 @@ const FrameTop = memo(function FrameTop() {
       <path d={FRAME_PATH + CAVITY_PATH} fillRule="evenodd" fill="#fff" filter="url(#grain-board)" />
       <path d={CAVITY_PATH} fill="none" stroke="var(--color-burn)" strokeWidth={0.03} strokeOpacity={0.85} />
       <path d={FRAME_PATH} fill="none" stroke="#8a6537" strokeWidth={0.02} strokeOpacity={0.6} />
-      <Engraved x={3.36} y={-0.235} size={0.27} weight={800} spacing={0.2}>
+      {/* The title in the middle of the top edge, the motto in the middle of the space below the dates. */}
+      <Engraved x={3.36} y={FRAME.top / 2} size={0.27} weight={800} spacing={0.2}>
         日历拼图
       </Engraved>
-      <Engraved x={0.04} y={7.74} size={0.41} weight={800} anchor="start" spacing={-0.01}>
+      <Engraved x={0.04} y={(7 + FRAME.bottom) / 2} size={0.41} weight={800} anchor="start" spacing={-0.01}>
         每天都要拼一拼
       </Engraved>
     </>

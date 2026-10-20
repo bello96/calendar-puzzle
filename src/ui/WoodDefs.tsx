@@ -26,7 +26,8 @@ export function WoodDefs() {
 
 /** Wood grain: stretched noise, tinted brown, kept inside the shape it is applied to. */
 function Grain({ id, seed, across, strength = 1 }: { id: string; seed: number; across: boolean; strength?: number }) {
-  // Basswood: fine, quiet fibres and a faint uneven tone.
+  // Basswood: fine, quiet fibres and a faint uneven tone, soft enough that no piece looks
+  // lighter or darker than the rest.
   const freq = across ? '11 0.45' : '0.45 11'
   return (
     <filter id={id} x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
@@ -34,14 +35,14 @@ function Grain({ id, seed, across, strength = 1 }: { id: string; seed: number; a
       <feColorMatrix
         in="fibre"
         type="matrix"
-        values={`0 0 0 0 0.45  0 0 0 0 0.3  0 0 0 0 0.14  0 0 0 ${0.75 * strength} ${-0.33 * strength}`}
+        values={`0 0 0 0 0.45  0 0 0 0 0.3  0 0 0 0 0.14  0 0 0 ${0.5 * strength} ${-0.22 * strength}`}
         result="lines"
       />
       <feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves={2} seed={seed + 1} result="figure" />
       <feColorMatrix
         in="figure"
         type="matrix"
-        values={`0 0 0 0 0.55  0 0 0 0 0.38  0 0 0 0 0.18  0 0 0 ${0.22 * strength} ${-0.08 * strength}`}
+        values={`0 0 0 0 0.55  0 0 0 0 0.38  0 0 0 0 0.18  0 0 0 ${0.13 * strength} ${-0.05 * strength}`}
         result="blotch"
       />
       <feMerge result="wood">

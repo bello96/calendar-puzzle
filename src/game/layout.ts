@@ -5,13 +5,15 @@ import type { Rect } from './placement'
 /**
  * The wooden board's outline in cells, measured from the photos, with (0, 0)
  * at the top-left of the cut-out. The upper two rows are one cell narrower,
- * which gives the board its notch at the top right.
+ * which gives the board its notch at the top right. The top edge, which
+ * carries the title, is a little wider than on the real board and the bottom
+ * one as narrow as the sides, so the frame looks even.
  */
 export const FRAME = {
   left: -0.48,
-  top: -0.48,
+  top: -0.64,
   right: 7.5,
-  bottom: 8.57,
+  bottom: 8.48,
   /** Right edge beside the month rows. */
   notchX: 6.42,
   /** Where the board widens again, just above row 2. */

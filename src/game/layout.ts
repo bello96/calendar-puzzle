@@ -1,6 +1,7 @@
 import { bounds, orient, type Point } from './geometry'
 import { PIECE_BY_ID, PIECE_IDS, type PieceId } from './pieces'
 import type { Rect } from './placement'
+import { scatter } from './scatter'
 
 /**
  * The wooden board's outline in cells, measured from the photos, with (0, 0)
@@ -23,88 +24,37 @@ export const FRAME = {
 
 export type LayoutMode = 'wide' | 'tall'
 
-/** Where a piece first lies: top-left of its full-size box, and how it is turned. */
+/** Where a piece is dealt to: top-left of its full-size box, how it is turned, and its resting angle in degrees. */
 export interface Home extends Point {
   turns: number
+  tilt: number
 }
 
-export type ArrangementName = 'rows3' | 'rows2'
+/** The tray's shape: 'block' is 11 × 9, as tall as the board; 'strip' is 15 × 7.5, for below the board on a phone. */
+export type ArrangementName = 'block' | 'strip'
 
 export interface TableLayout {
   mode: LayoutMode
   arrangement: ArrangementName
-  /** Same for every size of the same arrangement, so a real change of arrangement can be noticed. */
+  /** Same for every size of the same tray, so a real change of tray can be noticed. */
   key: string
   /** The visible table, in cells. */
   mat: Rect
-  /** The area the loose pieces start in. */
+  /** The area the loose pieces are dealt into. */
   tray: Rect
   /** Pieces lying in the tray are drawn at this size, so a phone can show them all. */
   trayScale: number
-  /** Top-left of the arrangement; tray positions scale from here. */
+  /** Top-left of the tray; positions in it scale from here. */
   trayOrigin: Point
-  homes: Record<PieceId, Home>
-  /** A slight resting angle for each piece, so the pile looks scattered. */
-  tilts: Record<PieceId, number>
+  /** The tray's size in full-size cells, before scaling. */
+  traySize: { width: number; height: number }
   /** Is a piece centred here lying in the tray (and so drawn at tray size)? */
   inTray(center: Point): boolean
 }
 
-/** Piece centres in full-size cells from the tray's top-left, with the quarter turns each lies at. */
-interface Arrangement {
-  width: number
-  height: number
-  spots: Record<PieceId, [turns: number, cx: number, cy: number]>
-}
-
-// Three rows in an 11 × 9 tray, as tall as the board.
-const ROWS3: Arrangement = {
-  width: 11,
-  height: 9,
-  spots: {
-    T5: [0, 1.5, 1.5],
-    V5: [0, 5, 1.5],
-    Z5: [0, 8.5, 1.5],
-    P5: [0, 1, 5],
-    L4: [1, 3.5, 5],
-    S4: [1, 6, 5],
-    U5: [1, 8.5, 5],
-    I4: [1, 10.5, 5.5],
-    L5: [0, 2, 8],
-    N5: [0, 6.5, 8],
-  },
-}
-
-// Two long rows, for below the board on a phone.
-const ROWS2: Arrangement = {
-  width: 15,
-  height: 7.5,
-  spots: {
-    T5: [0, 1.5, 1.5],
-    V5: [0, 5, 1.5],
-    Z5: [0, 8.5, 1.5],
-    P5: [0, 11.5, 1.5],
-    L4: [1, 14, 1.5],
-    L5: [0, 2, 4.5],
-    N5: [0, 6.5, 4.5],
-    S4: [1, 10, 5],
-    U5: [1, 12.5, 5],
-    I4: [1, 14.5, 5.5],
-  },
-}
-
-// Small fixed nudges and resting angles so the pieces look dropped rather than filed.
-const SCATTER: Record<PieceId, [dx: number, dy: number, tilt: number]> = {
-  I4: [0.06, -0.05, -2.5],
-  L4: [-0.07, 0.05, 3],
-  S4: [0.08, 0.06, -2],
-  L5: [-0.05, -0.06, 2],
-  N5: [0.07, 0.04, -3],
-  P5: [-0.08, 0.07, 2.5],
-  T5: [0.04, -0.08, -2],
-  U5: [-0.06, -0.04, 2.5],
-  V5: [0.08, 0.07, -3],
-  Z5: [-0.04, 0.08, 1.5],
+const TRAYS: Record<ArrangementName, { width: number; height: number }> = {
+  block: { width: 11, height: 9 },
+  strip: { width: 15, height: 7.5 },
 }
 
 const PAD = 0.9
@@ -112,15 +62,15 @@ const MIN_CELL = 26
 const MAX_CELL = 92
 
 /**
- * Board and tray side by side ('wide') or stacked ('tall'), with the pieces
- * in the tray set out in `arrangement` and drawn at `scale`.
+ * Board and tray side by side ('wide') or stacked ('tall'), with the tray
+ * shaped as `arrangement` and the pieces in it drawn at `scale`.
  */
 export function tableLayout(
   mode: LayoutMode,
-  arrangement: ArrangementName = mode === 'wide' ? 'rows3' : 'rows2',
+  arrangement: ArrangementName = mode === 'wide' ? 'block' : 'strip',
   scale = mode === 'wide' ? 1 : 0.54,
 ): TableLayout {
-  const { width, height, spots } = arrangement === 'rows3' ? ROWS3 : ROWS2
+  const { width, height } = TRAYS[arrangement]
   const boardW = FRAME.right - FRAME.left
   const boardH = FRAME.bottom - FRAME.top
   const trayW = width * scale
@@ -130,18 +80,7 @@ export function tableLayout(
       ? { x: FRAME.right + 1.4, y: FRAME.top + (boardH - trayH) / 2 }
       : { x: FRAME.left + (boardW - trayW) / 2, y: FRAME.bottom + 0.8 }
 
-  const homes = {} as Record<PieceId, Home>
-  const tilts = {} as Record<PieceId, number>
-  for (const id of PIECE_IDS) {
-    const [turns, cx, cy] = spots[id]
-    const [dx, dy, tilt] = SCATTER[id]
-    const { rows, cols } = bounds(orient(PIECE_BY_ID[id].cells, turns, false))
-    const center = { x: origin.x + (cx + dx) * scale, y: origin.y + (cy + dy) * scale }
-    homes[id] = { x: center.x - cols / 2, y: center.y - rows / 2, turns }
-    tilts[id] = tilt
-  }
-
-  const slack = 0.1 * scale // room for the scatter nudges
+  const slack = 0.1 * scale // a tilted piece's corners may reach a little past its box
   const tray = { left: origin.x - slack, top: origin.y - slack, right: origin.x + trayW + slack, bottom: origin.y + trayH + slack }
   return {
     mode,
@@ -156,16 +95,28 @@ export function tableLayout(
     tray,
     trayScale: scale,
     trayOrigin: origin,
-    homes,
-    tilts,
+    traySize: { width, height },
     inTray: mode === 'wide' ? (c) => c.x > FRAME.right + 0.25 : (c) => c.y > FRAME.bottom + 0.25,
   }
 }
 
-// Every layout worth considering: side by side, or stacked with either tray arrangement at a range of sizes.
+/** Spread the pieces over the layout's tray afresh, each in a random spot and turned at random. */
+export function deal(layout: TableLayout, rand: () => number = Math.random): Record<PieceId, Home> {
+  const { traySize, trayOrigin, trayScale: s } = layout
+  const lies = scatter(traySize.width, traySize.height, rand)
+  const homes = {} as Record<PieceId, Home>
+  for (const id of PIECE_IDS) {
+    const { cx, cy, turns, tilt } = lies[id]
+    const { rows, cols } = bounds(orient(PIECE_BY_ID[id].cells, turns, false))
+    homes[id] = { x: trayOrigin.x + cx * s - cols / 2, y: trayOrigin.y + cy * s - rows / 2, turns, tilt }
+  }
+  return homes
+}
+
+// Every layout worth considering: side by side, or stacked with either tray at a range of sizes.
 const CANDIDATES: TableLayout[] = [
   tableLayout('wide'),
-  ...(['rows3', 'rows2'] as const).flatMap((arrangement) =>
+  ...(['block', 'strip'] as const).flatMap((arrangement) =>
     Array.from({ length: 36 }, (_, i) => tableLayout('tall', arrangement, +(0.45 + i * 0.01).toFixed(2))),
   ),
 ]

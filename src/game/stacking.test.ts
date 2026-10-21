@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { tableLayout } from './layout'
+import { deal, tableLayout } from './layout'
 import { PIECE_IDS, type PieceId } from './pieces'
 import { overlapping, type Drawn } from './stacking'
 import { centerOf } from './state'
+import { seeded } from './testing/random'
 
 const loose = (id: PieceId, x: number, y: number, more: Partial<Drawn> = {}): Drawn => ({
   id,
@@ -64,22 +65,25 @@ describe('overlapping', () => {
   })
 })
 
-describe('pieces set out in the tray', () => {
+describe('pieces dealt into the tray', () => {
   const layouts = [
     tableLayout('wide'),
-    ...[0.45, 0.54, 0.6, 0.7, 0.8].flatMap((s) => [tableLayout('tall', 'rows2', s), tableLayout('tall', 'rows3', s)]),
+    ...[0.45, 0.54, 0.6, 0.7, 0.8].flatMap((s) => [tableLayout('tall', 'strip', s), tableLayout('tall', 'block', s)]),
   ]
 
   it.each(layouts.map((l) => [`${l.key} at ${l.trayScale}`, l] as const))('%s: none lies on another', (_, layout) => {
     // A first click on any of them turns it straight away.
-    const drawn = PIECE_IDS.map((id): Drawn => {
-      const home = layout.homes[id]
-      const p = { id, turns: home.turns, flips: 0, spot: { kind: 'loose' as const, x: home.x, y: home.y } }
-      return { ...p, tilt: layout.tilts[id], scale: layout.inTray(centerOf(p)) ? layout.trayScale : 1 }
-    })
-    for (const a of drawn) {
-      for (const b of drawn) {
-        if (a.id < b.id) expect(overlapping(a, b), `${a.id} and ${b.id}`).toBe(false)
+    for (let seed = 1; seed <= 4; seed++) {
+      const homes = deal(layout, seeded(seed))
+      const drawn = PIECE_IDS.map((id): Drawn => {
+        const home = homes[id]
+        const p = { id, turns: home.turns, flips: 0, spot: { kind: 'loose' as const, x: home.x, y: home.y } }
+        return { ...p, tilt: home.tilt, scale: layout.inTray(centerOf(p)) ? layout.trayScale : 1 }
+      })
+      for (const a of drawn) {
+        for (const b of drawn) {
+          if (a.id < b.id) expect(overlapping(a, b), `${a.id} and ${b.id}`).toBe(false)
+        }
       }
     }
   })

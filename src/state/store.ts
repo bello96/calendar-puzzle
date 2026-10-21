@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { bounds, mod, type Cell, type Point } from '../game/geometry'
-import { tableLayout, type TableLayout } from '../game/layout'
+import { deal, tableLayout, type Home, type TableLayout } from '../game/layout'
 import { PIECE_IDS, type PieceId } from '../game/pieces'
 import { overlapping, type Drawn } from '../game/stacking'
 import {
@@ -124,34 +124,34 @@ function raised(pieces: Record<PieceId, TablePiece>, ...ids: PieceId[]): Record<
   return next
 }
 
-function homePieces(layout: TableLayout, from?: Record<PieceId, TablePiece>, stagger = false): Record<PieceId, TablePiece> {
+/** A piece laid in the tray as dealt, turned there the short way round and face up. */
+function laidAt(p: TablePiece, home: Home): TablePiece {
+  return {
+    ...p,
+    turns: nearestTurns(p.turns, home.turns),
+    flips: Math.round(p.flips / 2) * 2,
+    spot: { kind: 'loose', x: home.x, y: home.y },
+    tilt: home.tilt,
+  }
+}
+
+/** Every piece scattered over the tray afresh: a new random spot and turn for each, every time. */
+function dealPieces(layout: TableLayout, from?: Record<PieceId, TablePiece>, stagger = false): Record<PieceId, TablePiece> {
+  const homes = deal(layout)
   const pieces = {} as Record<PieceId, TablePiece>
-  let travelling = 0
   PIECE_IDS.forEach((id, i) => {
     const prev = from?.[id]
-    const home = layout.homes[id]
-    // Untwist to the nearest matching pose, face up, rather than spinning all the way back.
-    const turns = prev ? nearestTurns(prev.turns, home.turns) : home.turns
-    const flips = prev ? Math.round(prev.flips / 2) * 2 : 0
-    const tilt = layout.tilts[id]
-    // One already lying at home stays put, rather than being picked up and set down again.
-    const atHome =
-      prev?.spot.kind === 'loose' &&
-      Math.abs(prev.spot.x - home.x) < 1e-6 &&
-      Math.abs(prev.spot.y - home.y) < 1e-6 &&
-      prev.turns === turns &&
-      prev.flips === flips &&
-      prev.tilt === tilt
-    pieces[id] = atHome
-      ? prev
+    const home = homes[id]
+    pieces[id] = prev
+      ? { ...laidAt(prev, home), motion: { kind: 'travel', delay: stagger ? i * 0.035 : 0 } }
       : {
           id,
-          turns,
-          flips,
+          turns: home.turns,
+          flips: 0,
           spot: { kind: 'loose', x: home.x, y: home.y },
-          z: prev?.z ?? i,
-          tilt,
-          motion: from ? { kind: 'travel', delay: stagger ? travelling++ * 0.035 : 0 } : { kind: 'jump' },
+          z: i,
+          tilt: home.tilt,
+          motion: { kind: 'jump' },
         }
   })
   return pieces
@@ -210,7 +210,7 @@ export const useGame = create<Store>()((set, get) => {
   })
 
   return {
-    pieces: initial?.pieces ?? homePieces(firstLayout),
+    pieces: initial?.pieces ?? dealPieces(firstLayout),
     layout: firstLayout,
     target: initial?.target ?? { kind: 'today' },
     timerDay: initial?.timerDay ?? null,
@@ -228,11 +228,12 @@ export const useGame = create<Store>()((set, get) => {
       const prev = get().layout
       if (layout === prev) return
       const pieces = { ...get().pieces }
+      const homes = layout.key === prev.key ? null : deal(layout)
       for (const id of PIECE_IDS) {
         const p = pieces[id]
         if (p.spot.kind === 'board') continue
-        if (layout.key === prev.key) {
-          // The same arrangement at another size: loose pieces keep their place relative to the tray.
+        if (!homes) {
+          // The same tray at another size: loose pieces keep their place relative to it.
           const c = centerOf(p)
           const k = layout.trayScale / prev.trayScale
           const at = prev.inTray(c)
@@ -240,11 +241,8 @@ export const useGame = create<Store>()((set, get) => {
             : c
           pieces[id] = onTable({ ...recentre(p, at), motion: { kind: 'jump' } }, layout)
         } else {
-          // A different arrangement (the screen turned): loose pieces go to their new places.
-          const home = layout.homes[id]
-          const box = bounds(shapeOf({ id, turns: home.turns, flips: 0 }))
-          const at = { x: home.x + box.cols / 2, y: home.y + box.rows / 2 }
-          pieces[id] = { ...recentre(p, at), tilt: layout.tilts[id], motion: { kind: 'jump' } }
+          // A different tray (the screen turned): the loose pieces are dealt into it afresh.
+          pieces[id] = { ...laidAt(p, homes[id]), motion: { kind: 'jump' } }
         }
       }
       set({ layout, pieces })
@@ -312,7 +310,7 @@ export const useGame = create<Store>()((set, get) => {
 
     resetAll() {
       set({
-        pieces: homePieces(get().layout, get().pieces, true),
+        pieces: dealPieces(get().layout, get().pieces, true),
         startedAt: null,
         finishedAt: null,
         usedAnswer: false,

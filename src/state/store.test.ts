@@ -1,18 +1,31 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { bounds } from '../game/geometry'
 import { tableLayout } from '../game/layout'
 import { PIECE_IDS, type PieceId } from '../game/pieces'
-import { answerFor, shapeOf } from '../game/state'
+import { answerFor, centerOf, shapeOf } from '../game/state'
+import { seeded } from '../game/testing/random'
 import { targetDate, targetFor, useGame, type TablePiece } from './store'
 
 const fresh = useGame.getState()
 beforeEach(() => {
+  // The pieces are dealt at random; the same deals every run.
+  vi.spyOn(Math, 'random').mockImplementation(seeded(1))
   useGame.setState(fresh, true)
   useGame.getState().resetAll()
 })
 
 const game = () => useGame.getState()
 const topmost = () => [...PIECE_IDS].sort((a, b) => game().pieces[b].z - game().pieces[a].z)[0]
+
+/** Every piece lies loose in the tray, face up. */
+function expectAllInTray() {
+  for (const id of PIECE_IDS) {
+    const p = game().pieces[id]
+    expect(p.spot.kind, id).toBe('loose')
+    expect(game().layout.inTray(centerOf(p)), id).toBe(true)
+    expect(p.flips % 2, id).toBe(0)
+  }
+}
 
 describe('store', () => {
   it('brings a piece to the top when it is turned', () => {
@@ -31,29 +44,31 @@ describe('store', () => {
   it('drops a released piece into a free slot and clears the drop preview', () => {
     game().pickUp('L4')
     game().setGhost([[3, 2]])
-    // L4 lies upright at home (XX / X. / X.); its box's top-left goes near (2, 3).
+    // However L4 lies, its box's top-left goes near (2, 3), and it fits there.
     expect(game().release('L4', { x: 2.2, y: 3.1 })).toBe(true)
     expect(game().pieces.L4.spot).toEqual({ kind: 'board', row: 3, col: 2 })
     expect(game().ghost).toBeNull()
     expect(game().draggingId).toBeNull()
   })
 
-  it('sends every piece back to its place in the tray', () => {
+  it('scatters every piece over the tray afresh when they are all taken back', () => {
+    const before = game().pieces
     game().release('L4', { x: 2, y: 3 })
+    game().flipPiece('U5', { x: 15, y: 4 })
     game().resetAll()
-    const homes = tableLayout('wide').homes
+    expectAllInTray()
+    // Each lies somewhere new, even the ones never touched, and they set off one after another.
     for (const id of PIECE_IDS) {
-      expect(game().pieces[id].spot).toEqual({ kind: 'loose', x: homes[id].x, y: homes[id].y })
+      const [a, b] = [before[id].spot, game().pieces[id].spot] as { x: number; y: number }[]
+      expect(Math.hypot(a.x - b.x, a.y - b.y), id).toBeGreaterThan(0.05)
     }
+    expect(PIECE_IDS.map((id) => game().pieces[id].motion)).toEqual(PIECE_IDS.map((_, i) => ({ kind: 'travel', delay: i * 0.035 })))
   })
 
-  it('leaves the pieces already at home alone when sending the rest back', () => {
-    game().release('L4', { x: 2, y: 3 })
-    const before = game().pieces
+  it('turns each piece the short way round to how it is dealt', () => {
+    useGame.setState({ pieces: { ...game().pieces, I4: { ...game().pieces.I4, turns: 41 } } })
     game().resetAll()
-    // Only the piece that was away travels, and it sets off at once.
-    expect(game().pieces.L4.motion).toEqual({ kind: 'travel', delay: 0 })
-    for (const id of PIECE_IDS) if (id !== 'L4') expect(game().pieces[id]).toBe(before[id])
+    expect(Math.abs(game().pieces.I4.turns - 41)).toBeLessThanOrEqual(2)
   })
 
   it('keeps the stacking order within the ten pieces however long you play', () => {
@@ -75,9 +90,10 @@ describe('raise', () => {
     useGame.setState({ pieces: { ...game().pieces, [id]: { ...p, turns: 0, flips: 0, tilt: 0, spot: { kind: 'loose', x, y } } } })
   }
 
+  // Laid on top of the empty board, well away from the pieces dealt into the tray.
   it('brings a piece out from under another to the top, without moving it', () => {
-    lay('L4', 12, 2)
-    lay('T5', 12.5, 2.5)
+    lay('L4', 1, 2)
+    lay('T5', 1.5, 2.5)
     const before = game().pieces.L4
     expect(game().raise('L4')).toBe(true)
     expect(topmost()).toBe('L4')
@@ -87,8 +103,8 @@ describe('raise', () => {
   })
 
   it('leaves a piece with nothing on it as it is', () => {
-    lay('L4', 12, 2)
-    lay('T5', 12.5, 2.5)
+    lay('L4', 1, 2)
+    lay('T5', 1.5, 2.5)
     const before = game().pieces
     expect(game().raise('T5')).toBe(false)
     expect(game().raise('I4')).toBe(false)
@@ -121,7 +137,7 @@ describe('raise', () => {
   it('judges pieces in a phone tray at the size they are drawn', () => {
     // The bar and the big L overlap at full size, but not drawn at half size in the tray below the board
     // (off to the side, clear of the other pieces).
-    game().setLayout(tableLayout('tall', 'rows2', 0.5))
+    game().setLayout(tableLayout('tall', 'strip', 0.5))
     lay('I4', 20, 10)
     lay('L5', 20, 10.7)
     expect(game().raise('I4')).toBe(false)
@@ -165,17 +181,14 @@ describe('showAnswer', () => {
 })
 
 describe('setTarget', () => {
-  it('empties the board for another day, sending every piece back to the tray', () => {
+  it('empties the board for another day, scattering every piece over the tray', () => {
     game().release('L4', { x: 2, y: 3 })
     game().release('T5', { x: 3.4, y: 0.2 })
     useGame.setState({ startedAt: 1 })
     const tomorrow = targetDate(game().target)
     tomorrow.setDate(tomorrow.getDate() + 1)
     game().setTarget(targetFor(tomorrow))
-    const homes = tableLayout('wide').homes
-    for (const id of PIECE_IDS) {
-      expect(game().pieces[id].spot).toEqual({ kind: 'loose', x: homes[id].x, y: homes[id].y })
-    }
+    expectAllInTray()
     expect(game().startedAt).toBeNull()
   })
 
@@ -205,8 +218,8 @@ describe('setLayout', () => {
   }
 
   it('keeps loose pieces where they lie in the tray when only the tray size changes', () => {
-    const small = tableLayout('tall', 'rows3', 0.6)
-    const large = tableLayout('tall', 'rows3', 0.7)
+    const small = tableLayout('tall', 'block', 0.6)
+    const large = tableLayout('tall', 'block', 0.7)
     game().setLayout(small)
     game().resetAll()
     const ids: PieceId[] = ['T5', 'I4']
@@ -222,11 +235,23 @@ describe('setLayout', () => {
     }
   })
 
+  it('deals the loose pieces into the new tray when the screen turns, leaving those in the board', () => {
+    game().release('L4', { x: 2, y: 3 })
+    const placed = game().pieces.L4.spot
+    game().setLayout(tableLayout('tall', 'strip', 0.6))
+    expect(game().pieces.L4.spot).toEqual(placed)
+    for (const id of PIECE_IDS) {
+      if (id === 'L4') continue
+      expect(game().pieces[id].spot.kind).toBe('loose')
+      expect(game().layout.inTray(centerOf(game().pieces[id]))).toBe(true)
+    }
+  })
+
   it('leaves pieces in the board alone when the tray size changes', () => {
-    game().setLayout(tableLayout('tall', 'rows3', 0.6))
+    game().setLayout(tableLayout('tall', 'block', 0.6))
     game().release('L4', { x: 2, y: 3 })
     const spot = game().pieces.L4.spot
-    game().setLayout(tableLayout('tall', 'rows3', 0.7))
+    game().setLayout(tableLayout('tall', 'block', 0.7))
     expect(game().pieces.L4.spot).toEqual(spot)
   })
 })

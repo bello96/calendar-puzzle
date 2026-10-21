@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { bounds } from './geometry'
-import { chooseLayout, FRAME, tableLayout, type TableLayout } from './layout'
+import { chooseLayout, deal, FRAME, tableLayout, type Home, type TableLayout } from './layout'
 import { PIECE_IDS, type PieceId } from './pieces'
 import { shapeOf } from './state'
+import { seeded } from './testing/random'
 
-/** The box a piece occupies at home, as drawn (scaled around its centre). */
-function homeBox(layout: TableLayout, id: PieceId) {
-  const home = layout.homes[id]
+/** The box a dealt piece occupies, as drawn (scaled around its centre). */
+function homeBox(layout: TableLayout, home: Home, id: PieceId) {
   const { rows, cols } = bounds(shapeOf({ id, turns: home.turns, flips: 0 }))
   const cx = home.x + cols / 2
   const cy = home.y + rows / 2
@@ -16,36 +16,34 @@ function homeBox(layout: TableLayout, id: PieceId) {
 
 describe.each(['wide', 'tall'] as const)('%s table', (mode) => {
   const layout = tableLayout(mode)
+  const deals = Array.from({ length: 8 }, (_, i) => deal(layout, seeded(i + 1)))
 
-  it('keeps the pieces apart from each other', () => {
-    for (const a of PIECE_IDS) {
-      for (const b of PIECE_IDS) {
-        if (a >= b) continue
-        const A = homeBox(layout, a)
-        const B = homeBox(layout, b)
-        const apart = A.right <= B.left || B.right <= A.left || A.bottom <= B.top || B.bottom <= A.top
-        expect(apart, `${a} and ${b} overlap`).toBe(true)
+  it('deals every piece into the tray, which is clear of the board', () => {
+    for (const homes of deals) {
+      for (const id of PIECE_IDS) {
+        const box = homeBox(layout, homes[id], id)
+        expect(box.left).toBeGreaterThanOrEqual(layout.tray.left - 1e-9)
+        expect(box.top).toBeGreaterThanOrEqual(layout.tray.top - 1e-9)
+        expect(box.right).toBeLessThanOrEqual(layout.tray.right + 1e-9)
+        expect(box.bottom).toBeLessThanOrEqual(layout.tray.bottom + 1e-9)
       }
-    }
-  })
-
-  it('keeps every piece in the tray, which is clear of the board', () => {
-    for (const id of PIECE_IDS) {
-      const box = homeBox(layout, id)
-      expect(box.left).toBeGreaterThanOrEqual(layout.tray.left - 1e-9)
-      expect(box.top).toBeGreaterThanOrEqual(layout.tray.top - 1e-9)
-      expect(box.right).toBeLessThanOrEqual(layout.tray.right + 1e-9)
-      expect(box.bottom).toBeLessThanOrEqual(layout.tray.bottom + 1e-9)
     }
     expect(layout.tray.left >= FRAME.right || layout.tray.top >= FRAME.bottom).toBe(true)
   })
 
   it('shrinks exactly the pieces lying in the tray', () => {
-    for (const id of PIECE_IDS) {
-      const box = homeBox(layout, id)
-      expect(layout.inTray({ x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 })).toBe(true)
+    for (const homes of deals) {
+      for (const id of PIECE_IDS) {
+        const box = homeBox(layout, homes[id], id)
+        expect(layout.inTray({ x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 })).toBe(true)
+      }
     }
     expect(layout.inTray({ x: 3.5, y: 4 })).toBe(false) // middle of the board
+  })
+
+  it('deals the pieces somewhere new each time', () => {
+    const spots = deals.map((homes) => PIECE_IDS.map((id) => `${homes[id].x.toFixed(2)},${homes[id].y.toFixed(2)}`).join(' '))
+    expect(new Set(spots).size).toBe(deals.length)
   })
 
   it('keeps the board and the tray inside the table', () => {

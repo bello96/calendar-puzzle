@@ -9,7 +9,7 @@ function savedJson(overrides: Record<string, unknown> = {}, pieceOverrides: Reco
   return JSON.stringify({
     version: 1,
     pieces: { ...pieces, ...pieceOverrides },
-    layout: { mode: 'wide', arrangement: 'rows3', scale: 1 },
+    layout: { mode: 'wide', arrangement: 'block', scale: 1 },
     timerDay: null,
     target: { kind: 'today' },
     sound: false,
@@ -53,6 +53,12 @@ describe('parseSaved', () => {
     const json = JSON.parse(savedJson())
     delete json.pieces.Z5
     expect(parseSaved(JSON.stringify(json))).toBeNull()
+  })
+
+  it('keeps the pieces of a save whose tray is no longer known, letting the table pick one', () => {
+    const saved = parseSaved(savedJson({ layout: { mode: 'wide', arrangement: 'rows3', scale: 1 } }))
+    expect(saved?.layout).toBeNull()
+    expect(saved?.pieces.I4.spot).toEqual({ kind: 'loose', x: 10, y: 0 })
   })
 
   it('rejects junk', () => {

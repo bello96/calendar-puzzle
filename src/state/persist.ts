@@ -48,7 +48,7 @@ function parseTarget(raw: Raw): TargetChoice | null {
 
 function parseLayout(raw: Raw): LayoutSpec | null {
   const modeOk = raw?.mode === 'wide' || raw?.mode === 'tall'
-  const arrangementOk = raw?.arrangement === 'rows3' || raw?.arrangement === 'rows2'
+  const arrangementOk = raw?.arrangement === 'block' || raw?.arrangement === 'strip'
   if (!modeOk || !arrangementOk || !isNum(raw.scale) || raw.scale <= 0 || raw.scale > 1) return null
   return { mode: raw.mode, arrangement: raw.arrangement, scale: raw.scale }
 }

@@ -6,7 +6,7 @@ import { useTable } from './table-context'
 
 /** On touch screens: turn and flip buttons above the piece last touched. */
 export function PieceActions() {
-  const { cell, origin, visible, layout } = useTable()
+  const { cell, origin, visible, layout, bar } = useTable()
   const piece = useGame((s) => (s.activeId && !s.draggingId ? s.pieces[s.activeId] : null))
   if (!piece) return null
 
@@ -25,7 +25,7 @@ export function PieceActions() {
   return (
     <div
       className="absolute z-[1200] flex -translate-x-1/2 -translate-y-full gap-1 rounded-full bg-mat-deep/95 p-1 shadow-lg shadow-black/30"
-      style={{ left: (left - origin.x) * cell, top: Math.max((top - origin.y) * cell - 10, 52) }}
+      style={{ left: (left - origin.x) * cell, top: Math.max((top - origin.y) * cell - 10, bar + 52) }}
     >
       <button
         type="button"

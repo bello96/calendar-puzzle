@@ -14,7 +14,6 @@ import { PIECE_BY_ID, type PieceId } from '../game/pieces'
 import { aimAt } from '../game/placement'
 import { centerOf, isFlipped, shapeOf, takenBy, topLeftOf } from '../game/state'
 import { useGame, type TablePiece } from '../state/store'
-import { play } from './sound'
 import { useTable } from './table-context'
 import { woodMarks } from './WoodDefs'
 
@@ -247,9 +246,7 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
       })
       setElev(1.7, { ...LIFT, delay: m.delay })
       carry.then(() => {
-        if (interrupted) return
-        setElev(height, SETTLE)
-        if (height === 0) play('place')
+        if (!interrupted) setElev(height, SETTLE)
       })
     } else {
       moves.current.push(
@@ -362,7 +359,7 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
       x: Math.min(Math.max(s.pointer.x + s.offsetGoal.x, v.left + cols / 2 - 0.4), v.right - cols / 2 + 0.4),
       y: Math.min(Math.max(s.pointer.y + s.offsetGoal.y, v.top + rows / 2 - 0.4), v.bottom - rows / 2 + 0.4),
     }
-    if (state.release(id, { x: center.x - cols / 2, y: center.y - rows / 2 })) play('place')
+    state.release(id, { x: center.x - cols / 2, y: center.y - rows / 2 })
   }
 
   /**

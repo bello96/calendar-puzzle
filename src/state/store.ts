@@ -17,7 +17,6 @@ import {
   type PieceState,
   type Pose,
 } from '../game/state'
-import { flushSave, loadSaved, save } from './persist'
 
 /** How a piece should animate to its new state. */
 export type Motion =
@@ -53,9 +52,12 @@ export interface GameState {
   pieces: Record<PieceId, TablePiece>
   /** How the table is laid out on this screen. */
   layout: TableLayout
+  /**
+   * How far up the table goes on this screen, in cells: the top of the window. That is above the
+   * mat's own top edge, and a loose piece may lie anywhere in between (under the top bar, too).
+   */
+  tableTop: number
   target: TargetChoice
-  /** The day (see dayKey) the game on the table is for: the pieces as they lie, the timer and the answer flag. */
-  timerDay: string | null
   activeId: PieceId | null
   draggingId: PieceId | null
   /** Cells the dragged piece would drop into. */
@@ -63,14 +65,14 @@ export interface GameState {
   /** A piece to wiggle so the player notices it. */
   attention: { id: PieceId; seq: number } | null
   notice: Notice | null
-  sound: boolean
   startedAt: number | null
   finishedAt: number | null
   usedAnswer: boolean
 }
 
 export interface GameActions {
-  setLayout(layout: TableLayout): void
+  /** Lay the table out for this window; it reaches up to `tableTop` (no further than the mat, if that is not said). */
+  setLayout(layout: TableLayout, tableTop?: number): void
   activate(id: PieceId | null): void
   pickUp(id: PieceId): void
   setGhost(cells: Cell[] | null): void
@@ -87,16 +89,19 @@ export interface GameActions {
   showAnswer(): void
   /** Make another day. A different day is a fresh start: every piece goes back to the tray. */
   setTarget(target: TargetChoice): void
-  /** Called with the day the table shows. A new day is a new game: the pieces go back to the tray, the timer starts over. */
-  trackTarget(day: string): void
-  toggleSound(): void
   markFinished(): void
   say(text: string): void
 }
 
 export type Store = GameState & GameActions
 
-export function targetDate(target: TargetChoice, now = new Date()): Date {
+/**
+ * When the page was opened. "Today" is the day that fell on for as long as the page stays open:
+ * the day to make does not move on at midnight, only when the page is loaded again.
+ */
+const OPENED = new Date()
+
+export function targetDate(target: TargetChoice, now = OPENED): Date {
   return target.kind === 'today'
     ? new Date(now.getFullYear(), now.getMonth(), now.getDate())
     : new Date(target.y, target.m - 1, target.d)
@@ -104,8 +109,8 @@ export function targetDate(target: TargetChoice, now = new Date()): Date {
 
 export const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
 
-/** The target for making `date`: following the clock if it is today, pinned otherwise. */
-export function targetFor(date: Date, now = new Date()): TargetChoice {
+/** The target for making `date`: plain "today" if that is the day the page was opened on, pinned otherwise. */
+export function targetFor(date: Date, now = OPENED): TargetChoice {
   return dayKey(date) === dayKey(now)
     ? { kind: 'today' }
     : { kind: 'date', y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() }
@@ -166,15 +171,18 @@ function dealPieces(layout: TableLayout, from?: Record<PieceId, TablePiece>, sta
 
 const plain = (pieces: Record<PieceId, TablePiece>): PieceMap => pieces
 
-/** Keep a loose piece on the table, as drawn (pieces in a phone's tray are drawn smaller). */
-function onTable(p: TablePiece, layout: TableLayout): TablePiece {
+/**
+ * Keep a loose piece on the table, as drawn (pieces in a phone's tray are drawn smaller): within
+ * the mat to the sides and below, and up to `top` above it.
+ */
+function onTable(p: TablePiece, layout: TableLayout, top: number): TablePiece {
   if (p.spot.kind !== 'loose') return p
   const { rows, cols } = bounds(shapeOf(p))
   const center = { x: p.spot.x + cols / 2, y: p.spot.y + rows / 2 }
   const s = layout.inTray(center) ? layout.trayScale : 1
   const { mat } = layout
   const cx = Math.min(Math.max(center.x, mat.left + (cols * s) / 2), mat.right - (cols * s) / 2)
-  const cy = Math.min(Math.max(center.y, mat.top + (rows * s) / 2), mat.bottom - (rows * s) / 2)
+  const cy = Math.min(Math.max(center.y, top + (rows * s) / 2), mat.bottom - (rows * s) / 2)
   if (cx === center.x && cy === center.y) return p
   return { ...p, spot: { kind: 'loose', x: cx - cols / 2, y: cy - rows / 2 } }
 }
@@ -190,13 +198,9 @@ function recentre(p: TablePiece, center: Point): TablePiece {
   return { ...p, spot: { kind: 'loose', x: center.x - cols / 2, y: center.y - rows / 2 } }
 }
 
-const saved = loadSaved()
-const firstTarget: TargetChoice = (PICK_ANY_DAY && saved?.target) || { kind: 'today' }
-/** The game as it was left, unless it was for another day: a new day starts with the tray dealt afresh. */
-const initial = saved && (saved.timerDay === null || saved.timerDay === dayKey(targetDate(firstTarget))) ? saved : null
-const firstLayout = saved?.layout
-  ? tableLayout(saved.layout.mode, saved.layout.arrangement, saved.layout.scale)
-  : tableLayout('wide')
+// Nothing is kept from one visit to the next: opening the page, or loading it again, is a new game.
+// The table lays itself out for the window as soon as it has measured it (setLayout).
+const firstLayout = tableLayout('wide')
 let noticeSeq = 0
 let attentionSeq = 0
 
@@ -204,7 +208,7 @@ export const useGame = create<Store>()((set, get) => {
   /** Apply a pure rules update to one piece, keeping its table extras, and bring it to the top. */
   const update = (id: PieceId, next: PieceMap, extra: Partial<TablePiece>) => {
     const pieces = get().pieces
-    const moved = onTable({ ...pieces[id], ...next[id], ...extra }, get().layout)
+    const moved = onTable({ ...pieces[id], ...next[id], ...extra }, get().layout, get().tableTop)
     set({ pieces: raised({ ...pieces, [id]: moved }, id) })
   }
   const begin = () => {
@@ -220,23 +224,35 @@ export const useGame = create<Store>()((set, get) => {
   })
 
   return {
-    pieces: initial?.pieces ?? dealPieces(firstLayout),
+    pieces: dealPieces(firstLayout),
     layout: firstLayout,
-    target: firstTarget,
-    timerDay: initial?.timerDay ?? null,
+    tableTop: firstLayout.mat.top,
+    target: { kind: 'today' },
     activeId: null,
     draggingId: null,
     ghost: null,
     attention: null,
     notice: null,
-    sound: saved?.sound ?? true,
-    startedAt: initial?.startedAt ?? null,
-    finishedAt: initial?.finishedAt ?? null,
-    usedAnswer: initial?.usedAnswer ?? false,
+    startedAt: null,
+    finishedAt: null,
+    usedAnswer: false,
 
-    setLayout(layout) {
+    setLayout(layout, tableTop = layout.mat.top) {
       const prev = get().layout
-      if (layout === prev) return
+      if (layout === prev) {
+        if (tableTop === get().tableTop) return
+        // The same table in a window of another size: whatever lay above the mat stays in view.
+        const pieces = { ...get().pieces }
+        let moved = false
+        for (const id of PIECE_IDS) {
+          const kept = onTable(pieces[id], layout, tableTop)
+          if (kept === pieces[id]) continue
+          pieces[id] = { ...kept, motion: { kind: 'jump' } }
+          moved = true
+        }
+        set(moved ? { tableTop, pieces } : { tableTop })
+        return
+      }
       const pieces = { ...get().pieces }
       const homes = layout.key === prev.key ? null : deal(layout)
       for (const id of PIECE_IDS) {
@@ -249,13 +265,13 @@ export const useGame = create<Store>()((set, get) => {
           const at = prev.inTray(c)
             ? { x: layout.trayOrigin.x + (c.x - prev.trayOrigin.x) * k, y: layout.trayOrigin.y + (c.y - prev.trayOrigin.y) * k }
             : c
-          pieces[id] = onTable({ ...recentre(p, at), motion: { kind: 'jump' } }, layout)
+          pieces[id] = onTable({ ...recentre(p, at), motion: { kind: 'jump' } }, layout, tableTop)
         } else {
           // A different tray (the screen turned): the loose pieces are dealt into it afresh.
           pieces[id] = { ...laidAt(p, homes[id]), motion: { kind: 'jump' } }
         }
       }
-      set({ layout, pieces })
+      set({ layout, tableTop, pieces })
     },
 
     activate(id) {
@@ -381,26 +397,9 @@ export const useGame = create<Store>()((set, get) => {
     },
 
     setTarget(target) {
-      const day = dayKey(targetDate(target))
-      const changed = day !== dayKey(targetDate(get().target))
+      const changed = dayKey(targetDate(target)) !== dayKey(targetDate(get().target))
       set({ target })
-      if (changed) {
-        get().resetAll()
-        // Dealt for that day already, so not again when the table reports it.
-        set({ timerDay: day })
-      }
-    },
-
-    trackTarget(day) {
-      const last = get().timerDay
-      if (last === day) return
-      set({ timerDay: day, startedAt: null, finishedAt: null, usedAnswer: false })
-      // Midnight has passed with the page open: the day before's pieces go back to the tray.
-      if (last !== null) get().resetAll()
-    },
-
-    toggleSound() {
-      set({ sound: !get().sound })
+      if (changed) get().resetAll()
     },
 
     markFinished() {
@@ -412,12 +411,3 @@ export const useGame = create<Store>()((set, get) => {
     },
   }
 })
-
-useGame.subscribe((state) => save(state))
-if (typeof window !== 'undefined') {
-  // Don't lose the last move when the tab is closed or hidden right after it.
-  window.addEventListener('pagehide', flushSave)
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushSave()
-  })
-}

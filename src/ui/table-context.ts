@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useMemo } from 'react'
 import type { Point } from '../game/geometry'
 import type { TableLayout } from '../game/layout'
 import type { Rect } from '../game/placement'
@@ -13,6 +13,8 @@ export interface TableView {
   origin: Point
   /** The world area the container shows. */
   visible: Rect
+  /** How many px at the top of the container lie under the top bar. */
+  bar: number
   toWorld(clientX: number, clientY: number): Point
 }
 
@@ -24,21 +26,13 @@ export function useTable(): TableView {
   return view
 }
 
-const startOfToday = () => {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
-}
-
-/** The date to spell out; follows the clock past midnight when it is "today". */
+/**
+ * The date to spell out. "Today" is the day the page was opened on: with the page left open
+ * past midnight it stays that day, until the page is loaded again.
+ */
 export function useTargetDate(): Date {
   const target = useGame((s) => s.target)
-  const [today, setToday] = useState(startOfToday)
-  useEffect(() => {
-    const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
-    const timer = setTimeout(() => setToday(startOfToday()), midnight.getTime() - Date.now() + 500)
-    return () => clearTimeout(timer)
-  }, [today])
-  return useMemo(() => targetDate(target, today), [target, today])
+  return useMemo(() => targetDate(target), [target])
 }
 
 export const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']

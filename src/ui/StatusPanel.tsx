@@ -4,7 +4,6 @@ import { status } from '../game/state'
 import { PICK_ANY_DAY, targetFor, useGame } from '../state/store'
 import { Button } from './Button'
 import { celebrate } from './confetti'
-import { play } from './sound'
 import { dateParts, formatDate, useTable, useTargetDate } from './table-context'
 
 function duration(ms: number): string {
@@ -31,6 +30,9 @@ export function cheerFor(date: Date): string {
   return CHEERS[day % CHEERS.length]
 }
 
+/** How long after the last piece goes in the paper flies, in ms: time to see the board is done before anything bursts. */
+const BEAT = 1000
+
 /** Once every piece is in, the emptied tray says how it went. */
 export function StatusPanel() {
   const { layout, cell, origin, visible } = useTable()
@@ -42,15 +44,15 @@ export function StatusPanel() {
   const usedAnswer = useGame((s) => s.usedAnswer)
   const st = useMemo(() => status(pieces, date), [pieces, date])
 
-  // The moment the last piece goes in: a chime, and paper in the air.
+  // The last piece has gone in: the time is taken there and then, and a beat later there is paper
+  // in the air. Not if the board is taken apart again within that beat.
   useEffect(() => {
     if (!st.solved) return
     const game = useGame.getState()
-    if (game.finishedAt === null) {
-      game.markFinished()
-      play('solved')
-      celebrate()
-    }
+    if (game.finishedAt !== null) return
+    game.markFinished()
+    const timer = setTimeout(celebrate, BEAT)
+    return () => clearTimeout(timer)
   }, [st.solved])
 
   if (!st.complete || dragging) return null
@@ -97,18 +99,19 @@ export function StatusPanel() {
                 </span>
               ))}
           </p>
-          {/* One puzzle a day: there is no going on to the next until it comes. */}
-          {!PICK_ANY_DAY && (
-            <p className="mt-[clamp(0px,0.5cqw,5px)] text-[clamp(14px,2.45cqw,22px)] text-chalk-dim">明天再来，继续拼新的一天。</p>
-          )}
-          <div className="mt-[clamp(8px,3cqw,28px)] flex flex-wrap justify-center gap-2">
-            {PICK_ANY_DAY && (
+          {/*
+            One puzzle a day: there is no going on to the next until it comes, and nothing to press here.
+            Starting today's over is 全部收回 in the top bar.
+          */}
+          {PICK_ANY_DAY ? (
+            <div className="mt-[clamp(8px,3cqw,28px)]">
               <Button tone="solid" onClick={nextDay}>
                 接着拼下一天
               </Button>
-            )}
-            <Button onClick={() => useGame.getState().resetAll()}>全部收回</Button>
-          </div>
+            </div>
+          ) : (
+            <p className="mt-[clamp(0px,0.5cqw,5px)] text-[clamp(14px,2.45cqw,22px)] text-chalk-dim">明天再来，新的一天仍然要拼！</p>
+          )}
         </>
       ) : (
         <>

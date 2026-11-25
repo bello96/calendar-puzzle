@@ -1,26 +1,28 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { chooseLayout } from '../game/layout'
 import { PIECE_IDS } from '../game/pieces'
-import { dayKey, useGame } from '../state/store'
+import { useGame } from '../state/store'
 import { Board } from './Board'
 import { NoticeToast } from './NoticeToast'
 import { inHand, Piece } from './Piece'
 import { PieceActions } from './PieceActions'
-import { warmUpSound } from './sound'
 import { StatusPanel } from './StatusPanel'
-import { TableContext, useTargetDate, type TableView } from './table-context'
+import { TableContext, type TableView } from './table-context'
 
 const GUTTER = 12
 
-/** The cutting mat: board on one side, loose pieces on the other, scaled to fit the window. */
-export function Table() {
+/**
+ * The cutting mat: board on one side, loose pieces on the other, scaled to fit the window.
+ * It fills the window; the top bar lies over its first `bar` px. The board and the tray are
+ * laid out clear of the bar, but the mat runs on under it, and a piece may be put there too.
+ */
+export function Table({ bar }: { bar: number }) {
   const ref = useRef<HTMLDivElement>(null)
   /** Where the table is on screen; measured when it resizes and at the start of each press. */
   const rect = useRef<DOMRect | null>(null)
   const [size, setSize] = useState<{ w: number; h: number } | null>(null)
   const [touch, setTouch] = useState(() => window.matchMedia?.('(pointer: coarse)').matches ?? false)
   const setLayout = useGame((s) => s.setLayout)
-  const date = useTargetDate()
 
   useLayoutEffect(() => {
     const el = ref.current!
@@ -34,37 +36,36 @@ export function Table() {
     return () => observer.disconnect()
   }, [])
 
-  // A new day to make starts a new timer.
-  const day = dayKey(date)
-  useEffect(() => {
-    useGame.getState().trackTarget(day)
-  }, [day])
-
   const view = useMemo<TableView | null>(() => {
     if (!size) return null
-    const { layout, cell } = chooseLayout(size.w - 2 * GUTTER, size.h - 2 * GUTTER)
+    // Board and tray go in the middle of what the bar leaves of the window.
+    const below = size.h - bar
+    const { layout, cell } = chooseLayout(size.w - 2 * GUTTER, below - 2 * GUTTER)
     const matW = (layout.mat.right - layout.mat.left) * cell
     const matH = (layout.mat.bottom - layout.mat.top) * cell
     const origin = {
       x: layout.mat.left - (size.w - matW) / 2 / cell,
-      y: layout.mat.top - (size.h - matH) / 2 / cell,
+      y: layout.mat.top - (bar + (below - matH) / 2) / cell,
     }
     return {
       layout,
       cell,
       origin,
+      bar,
       visible: { left: origin.x, top: origin.y, right: origin.x + size.w / cell, bottom: origin.y + size.h / cell },
       toWorld(clientX, clientY) {
         const r = rect.current ?? ref.current!.getBoundingClientRect()
         return { x: origin.x + (clientX - r.left) / cell, y: origin.y + (clientY - r.top) / cell }
       },
     }
-  }, [size])
+  }, [size, bar])
 
+  // The store is told the layout, and how far up the window the table goes: to its top edge.
   const layout = view?.layout
+  const tableTop = view?.visible.top
   useEffect(() => {
-    if (layout) setLayout(layout)
-  }, [layout, setLayout])
+    if (layout) setLayout(layout, tableTop)
+  }, [layout, tableTop, setLayout])
 
   // Handles for automated browser checks; stripped from production builds.
   useEffect(() => {
@@ -80,7 +81,7 @@ export function Table() {
   return (
     <div
       ref={ref}
-      className="relative min-h-0 flex-1 touch-none overflow-hidden select-none"
+      className="relative h-full touch-none overflow-hidden select-none"
       style={
         view && grid
           ? {
@@ -97,7 +98,6 @@ export function Table() {
       }
       onPointerDownCapture={(e) => {
         rect.current = e.currentTarget.getBoundingClientRect()
-        warmUpSound()
         // Show touch controls after a touch; a press on one of them must not hide them.
         if (!(e.target as Element).closest('button')) setTouch(e.pointerType !== 'mouse')
         // A second finger tapping anywhere turns the piece being dragged.

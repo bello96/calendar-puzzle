@@ -4,7 +4,7 @@ import { tableLayout } from '../game/layout'
 import { PIECE_IDS, type PieceId } from '../game/pieces'
 import { answerFor, centerOf, shapeOf } from '../game/state'
 import { seeded } from '../game/testing/random'
-import { dayKey, PICK_ANY_DAY, targetDate, targetFor, useGame, type Store, type TablePiece } from './store'
+import { targetDate, targetFor, useGame, type Store, type TablePiece } from './store'
 
 const fresh = useGame.getState()
 beforeEach(() => {
@@ -148,103 +148,103 @@ describe('raise', () => {
   })
 })
 
-describe('timer', () => {
-  it('starts afresh when the date to make changes', () => {
-    game().trackTarget('2026-10-19')
-    useGame.setState({ startedAt: 1, finishedAt: 2, usedAnswer: true })
-    game().trackTarget('2026-10-20')
-    expect([game().startedAt, game().finishedAt, game().usedAnswer]).toEqual([null, null, false])
-  })
+describe('the day to make', () => {
+  afterEach(() => vi.useRealTimers())
 
-  it('keeps running while the date stays the same', () => {
-    game().trackTarget('2026-10-19')
-    useGame.setState({ startedAt: 1, finishedAt: 2 })
-    game().trackTarget('2026-10-19')
-    expect([game().startedAt, game().finishedAt]).toEqual([1, 2])
-  })
-})
-
-describe('a new day', () => {
-  it('empties the board when midnight passes with the page open', () => {
-    game().trackTarget('2026-10-19')
-    game().release('L4', { x: 2, y: 3 })
-    game().release('T5', { x: 3.4, y: 0.2 })
-    game().trackTarget('2026-10-20')
-    expectAllInTray()
-  })
-
-  it('leaves the pieces be on the first day there is', () => {
-    game().release('L4', { x: 2, y: 3 })
-    const before = game().pieces
-    game().trackTarget('2026-10-19')
-    expect(game().pieces).toBe(before)
-  })
-
-  it('deals the tray once, not twice, when another day is picked', () => {
-    const today = targetDate(game().target)
-    game().trackTarget(dayKey(today))
-    const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
-    game().setTarget(targetFor(tomorrow))
-    const dealt = game().pieces
-    // The table then reports the day it now shows.
-    game().trackTarget(dayKey(tomorrow))
-    expect(game().pieces).toBe(dealt)
-  })
-})
-
-describe('a table left from an earlier visit', () => {
-  /** What the page saved on `day`: a game under way, one piece in the board, the sound turned off. */
-  function left(day: string, more: Record<string, unknown> = {}): string {
-    const pieces: Record<string, unknown> = Object.fromEntries(
-      PIECE_IDS.map((id, i) => [id, { id, turns: 0, flips: 0, spot: { kind: 'loose', x: 10, y: i * 2 }, z: i, tilt: 1 }]),
-    )
-    pieces.I4 = { id: 'I4', turns: 1, flips: 0, spot: { kind: 'board', row: 2, col: 6 }, z: 9, tilt: 0 }
-    return JSON.stringify({
-      version: 1,
-      pieces,
-      layout: { mode: 'wide', arrangement: 'block', scale: 1 },
-      target: { kind: 'today' },
-      timerDay: day,
-      sound: false,
-      startedAt: 1000,
-      finishedAt: null,
-      usedAnswer: false,
-      ...more,
-    })
-  }
-
-  /** The game as it starts when the page is opened at `now` with `json` in the browser's storage. */
-  async function opened(json: string, now: Date): Promise<Store> {
+  /** The game as the page starts it at `now`. */
+  async function openedAt(now: Date) {
     vi.useFakeTimers({ toFake: ['Date'], now })
-    vi.stubGlobal('localStorage', { getItem: () => json, setItem: () => {} })
     vi.resetModules()
-    return (await import('./store')).useGame.getState()
+    return import('./store')
   }
 
+  it('stays the day the page was opened on when midnight passes', async () => {
+    const page = await openedAt(new Date(2026, 10, 25, 23, 59, 50))
+    vi.setSystemTime(new Date(2026, 10, 26, 0, 0, 30))
+    expect(page.targetDate(page.useGame.getState().target).toDateString()).toBe('Wed Nov 25 2026')
+  })
+
+  it('is the new day once the page is opened again', async () => {
+    await openedAt(new Date(2026, 10, 25, 23, 59, 50))
+    const again = await openedAt(new Date(2026, 10, 26, 0, 0, 30))
+    expect(again.targetDate(again.useGame.getState().target).toDateString()).toBe('Thu Nov 26 2026')
+  })
+})
+
+describe('the room above the mat', () => {
+  /** Let the bar go with its box's top at `y`, over the board's columns and far above its rows; where that top ends up. */
+  const letGoAt = (y: number) => {
+    game().release('I4', { x: 2, y })
+    return (game().pieces.I4.spot as { y: number }).y
+  }
+
+  it('is out of bounds where the table ends with the mat', () => {
+    const { mat } = game().layout
+    expect(letGoAt(mat.top - 1)).toBeCloseTo(mat.top, 6)
+  })
+
+  it('takes a piece where the table reaches further up the window', () => {
+    const layout = game().layout
+    game().setLayout(layout, layout.mat.top - 1.5)
+    expect(letGoAt(layout.mat.top - 1)).toBeCloseTo(layout.mat.top - 1, 6)
+  })
+
+  it('ends at the top of the window', () => {
+    const layout = game().layout
+    game().setLayout(layout, layout.mat.top - 1.5)
+    expect(letGoAt(layout.mat.top - 4)).toBeCloseTo(layout.mat.top - 1.5, 6)
+  })
+
+  it('gives a piece back to view when the window leaves less of it', () => {
+    const layout = game().layout
+    game().setLayout(layout, layout.mat.top - 2)
+    letGoAt(layout.mat.top - 1.8)
+    game().setLayout(layout, layout.mat.top - 0.5)
+    expect((game().pieces.I4.spot as { y: number }).y).toBeCloseTo(layout.mat.top - 0.5, 6)
+  })
+})
+
+describe('opening the page', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
-  it('is picked up again later the same day', async () => {
-    const state = await opened(left('2026-11-25'), new Date(2026, 10, 25, 21))
-    expect(state.pieces.I4.spot).toEqual({ kind: 'board', row: 2, col: 6 })
-    expect(state.startedAt).toBe(1000)
-  })
-
-  it('is cleared away on a later day: the tray dealt afresh, the timer not started', async () => {
-    const state = await opened(left('2026-11-24'), new Date(2026, 10, 25, 8))
+  it('starts a fresh game, whatever an earlier visit left in the browser', async () => {
+    // What the game used to save as it went: here a game under way that same day, one piece in the board.
+    const pieces: Record<string, unknown> = Object.fromEntries(
+      PIECE_IDS.map((id, i) => [id, { id, turns: 0, flips: 0, spot: { kind: 'loose', x: 10, y: i * 2 }, z: i, tilt: 1 }]),
+    )
+    pieces.I4 = { id: 'I4', turns: 1, flips: 0, spot: { kind: 'board', row: 2, col: 6 }, z: 9, tilt: 0 }
+    const left = JSON.stringify({
+      version: 1,
+      pieces,
+      layout: { mode: 'wide', arrangement: 'block', scale: 1 },
+      target: { kind: 'today' },
+      timerDay: '2026-11-25',
+      sound: false,
+      startedAt: 1000,
+      finishedAt: null,
+      usedAnswer: false,
+    })
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 10, 25, 21) })
+    vi.stubGlobal('localStorage', { getItem: () => left, setItem: () => {} })
+    vi.resetModules()
+    const state: Store = (await import('./store')).useGame.getState()
     expectAllInTray(state)
     expect(state.startedAt).toBeNull()
-    // How the player set the sound has nothing to do with the day.
-    expect(state.sound).toBe(false)
   })
 
-  it.skipIf(PICK_ANY_DAY)('makes today, whatever day was being made, while picking a day is switched off', async () => {
-    const picked = left('2026-3-8', { target: { kind: 'date', y: 2026, m: 3, d: 8 } })
-    const state = await opened(picked, new Date(2026, 10, 25, 8))
-    expect(state.target).toEqual({ kind: 'today' })
-    expectAllInTray(state)
+  it('keeps nothing in the browser as the game goes', async () => {
+    const setItem = vi.fn()
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem })
+    vi.resetModules()
+    const { useGame: opened } = await import('./store')
+    vi.useFakeTimers()
+    opened.getState().release('L4', { x: 2, y: 3 })
+    expect(opened.getState().pieces.L4.spot.kind).toBe('board')
+    vi.advanceTimersByTime(5000)
+    expect(setItem).not.toHaveBeenCalled()
   })
 })
 

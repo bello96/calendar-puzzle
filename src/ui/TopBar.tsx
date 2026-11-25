@@ -1,9 +1,11 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useState, type ReactNode, type Ref } from 'react'
 import { PIECE_IDS } from '../game/pieces'
 import { PICK_ANY_DAY, targetFor, useGame } from '../state/store'
 import { Button } from './Button'
-import { DateField } from './DateField'
 import { useTargetDate } from './table-context'
+
+/** The date with its calendar brings antd along, so it is fetched only if it is going to be shown. */
+const DateField = lazy(() => import('./DateField').then((m) => ({ default: m.DateField })))
 
 /**
  * A button that asks again before doing something that throws away the
@@ -29,7 +31,7 @@ function ConfirmButton({
   }, [asking])
   return (
     <Button
-      className={asking ? 'bg-chalk/15' : ''}
+      className={`pointer-events-auto ${asking ? 'bg-chalk/15' : ''}`}
       onBlur={() => setAsking(false)}
       onClick={() => {
         if (asking || !needed()) {
@@ -44,25 +46,39 @@ function ConfirmButton({
 }
 
 /**
- * The date to make, and what you can do about it. `onGuide` brings up the
- * rules; it is handed the 玩法 button when that was pressed from the keyboard.
+ * On the left, how far along the board is and the way to start it over; on the
+ * right, the rules. `onGuide` brings those up; it is handed the 玩法 button
+ * when that was pressed from the keyboard.
+ *
+ * The bar lies over the top of the table and is see-through to the pointer but
+ * for its buttons: the mat goes on under it, and pieces are put there and
+ * picked up from there like anywhere else.
  */
-export function TopBar({ onGuide }: { onGuide: (from: HTMLElement | null) => void }) {
+export function TopBar({ onGuide, ref }: { onGuide: (from: HTMLElement | null) => void; ref?: Ref<HTMLElement> }) {
   const date = useTargetDate()
   const placed = useGame((s) => PIECE_IDS.filter((id) => s.pieces[id].spot.kind === 'board').length)
-  const sound = useGame((s) => s.sound)
   const game = useGame.getState()
 
   return (
-    <header className="relative z-20 flex flex-wrap items-center gap-x-4 gap-y-0.5 px-2 pt-2 pb-1 sm:gap-x-6 sm:px-5 sm:pt-3">
+    <header
+      ref={ref}
+      className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-wrap items-center gap-x-4 gap-y-0.5 px-2 pt-2 pb-1 sm:gap-x-6 sm:px-5 sm:pt-3"
+    >
       {/*
         Any other day, the day before or after, or back to today: all from the calendar.
         Hidden for now (PICK_ANY_DAY): the game makes today's date and no other.
       */}
-      {PICK_ANY_DAY && <DateField date={date} onChange={(d) => game.setTarget(targetFor(d))} />}
+      {PICK_ANY_DAY && (
+        <Suspense fallback={null}>
+          <span className="pointer-events-auto">
+            <DateField date={date} onChange={(d) => game.setTarget(targetFor(d))} />
+          </span>
+        </Suspense>
+      )}
 
-      <div className="ml-auto flex flex-wrap items-center gap-0.5">
-        <span className="mr-1 text-[14px] text-chalk-dim tabular-nums sm:mr-2" aria-live="polite">
+      {/* The count starts as far in from the left as the words of 玩法 end short of the right. */}
+      <div className="flex flex-wrap items-center gap-0.5">
+        <span className="mr-1 pl-2 text-[14px] text-chalk-dim tabular-nums sm:mr-2 sm:pl-3" aria-live="polite">
           <span className="hidden sm:inline">已放入 </span>
           {placed} / {PIECE_IDS.length}
         </span>
@@ -74,35 +90,15 @@ export function TopBar({ onGuide }: { onGuide: (from: HTMLElement | null) => voi
         >
           {placed > 0 ? '全部收回' : '全部打乱'}
         </ConfirmButton>
-        <Button aria-haspopup="dialog" onClick={(e) => onGuide(e.detail === 0 ? e.currentTarget : null)}>
-          玩法
-        </Button>
-        <Button
-          aria-label={sound ? '关掉声音' : '打开声音'}
-          title={sound ? '关掉声音' : '打开声音'}
-          aria-pressed={sound}
-          className="w-9 px-0!"
-          onClick={game.toggleSound}
-        >
-          <SpeakerIcon muted={!sound} />
-        </Button>
       </div>
-    </header>
-  )
-}
 
-function SpeakerIcon({ muted }: { muted: boolean }) {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor" fillOpacity={0.15} />
-      {muted ? (
-        <path d="M16 9.5l5 5m0-5l-5 5" />
-      ) : (
-        <>
-          <path d="M15.5 9a4 4 0 0 1 0 6" />
-          <path d="M18 6.5a7.5 7.5 0 0 1 0 11" />
-        </>
-      )}
-    </svg>
+      <Button
+        className="pointer-events-auto ml-auto"
+        aria-haspopup="dialog"
+        onClick={(e) => onGuide(e.detail === 0 ? e.currentTarget : null)}
+      >
+        玩法
+      </Button>
+    </header>
   )
 }

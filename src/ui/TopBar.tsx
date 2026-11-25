@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { PIECE_IDS } from '../game/pieces'
-import { targetFor, useGame } from '../state/store'
+import { PICK_ANY_DAY, targetFor, useGame } from '../state/store'
 import { Button } from './Button'
 import { DateField } from './DateField'
 import { useTargetDate } from './table-context'
@@ -55,8 +55,11 @@ export function TopBar({ onGuide }: { onGuide: (from: HTMLElement | null) => voi
 
   return (
     <header className="relative z-20 flex flex-wrap items-center gap-x-4 gap-y-0.5 px-2 pt-2 pb-1 sm:gap-x-6 sm:px-5 sm:pt-3">
-      {/* Any other day, the day before or after, or back to today: all from the calendar. */}
-      <DateField date={date} onChange={(d) => game.setTarget(targetFor(d))} />
+      {/*
+        Any other day, the day before or after, or back to today: all from the calendar.
+        Hidden for now (PICK_ANY_DAY): the game makes today's date and no other.
+      */}
+      {PICK_ANY_DAY && <DateField date={date} onChange={(d) => game.setTarget(targetFor(d))} />}
 
       <div className="ml-auto flex flex-wrap items-center gap-0.5">
         <span className="mr-1 text-[14px] text-chalk-dim tabular-nums sm:mr-2" aria-live="polite">

@@ -37,6 +37,13 @@ export interface TablePiece extends PieceState {
 
 export type TargetChoice = { kind: 'today' } | { kind: 'date'; y: number; m: number; d: number }
 
+/**
+ * May the player pick which day to make? Not for now: the game is one puzzle a day, today's.
+ * Turned back on, this brings back the date in the top bar (with its calendar) and 接着拼下一天
+ * on a finished board.
+ */
+export const PICK_ANY_DAY: boolean = false
+
 export interface Notice {
   id: number
   text: string
@@ -47,7 +54,7 @@ export interface GameState {
   /** How the table is laid out on this screen. */
   layout: TableLayout
   target: TargetChoice
-  /** The day (see dayKey) the timer and the answer flag belong to. */
+  /** The day (see dayKey) the game on the table is for: the pieces as they lie, the timer and the answer flag. */
   timerDay: string | null
   activeId: PieceId | null
   draggingId: PieceId | null
@@ -80,7 +87,7 @@ export interface GameActions {
   showAnswer(): void
   /** Make another day. A different day is a fresh start: every piece goes back to the tray. */
   setTarget(target: TargetChoice): void
-  /** Called with the current target day; a new day starts a new timer. */
+  /** Called with the day the table shows. A new day is a new game: the pieces go back to the tray, the timer starts over. */
   trackTarget(day: string): void
   toggleSound(): void
   markFinished(): void
@@ -183,9 +190,12 @@ function recentre(p: TablePiece, center: Point): TablePiece {
   return { ...p, spot: { kind: 'loose', x: center.x - cols / 2, y: center.y - rows / 2 } }
 }
 
-const initial = loadSaved()
-const firstLayout = initial?.layout
-  ? tableLayout(initial.layout.mode, initial.layout.arrangement, initial.layout.scale)
+const saved = loadSaved()
+const firstTarget: TargetChoice = (PICK_ANY_DAY && saved?.target) || { kind: 'today' }
+/** The game as it was left, unless it was for another day: a new day starts with the tray dealt afresh. */
+const initial = saved && (saved.timerDay === null || saved.timerDay === dayKey(targetDate(firstTarget))) ? saved : null
+const firstLayout = saved?.layout
+  ? tableLayout(saved.layout.mode, saved.layout.arrangement, saved.layout.scale)
   : tableLayout('wide')
 let noticeSeq = 0
 let attentionSeq = 0
@@ -212,14 +222,14 @@ export const useGame = create<Store>()((set, get) => {
   return {
     pieces: initial?.pieces ?? dealPieces(firstLayout),
     layout: firstLayout,
-    target: initial?.target ?? { kind: 'today' },
+    target: firstTarget,
     timerDay: initial?.timerDay ?? null,
     activeId: null,
     draggingId: null,
     ghost: null,
     attention: null,
     notice: null,
-    sound: initial?.sound ?? true,
+    sound: saved?.sound ?? true,
     startedAt: initial?.startedAt ?? null,
     finishedAt: initial?.finishedAt ?? null,
     usedAnswer: initial?.usedAnswer ?? false,
@@ -371,13 +381,22 @@ export const useGame = create<Store>()((set, get) => {
     },
 
     setTarget(target) {
-      const changed = dayKey(targetDate(target)) !== dayKey(targetDate(get().target))
+      const day = dayKey(targetDate(target))
+      const changed = day !== dayKey(targetDate(get().target))
       set({ target })
-      if (changed) get().resetAll()
+      if (changed) {
+        get().resetAll()
+        // Dealt for that day already, so not again when the table reports it.
+        set({ timerDay: day })
+      }
     },
 
     trackTarget(day) {
-      if (get().timerDay !== day) set({ timerDay: day, startedAt: null, finishedAt: null, usedAnswer: false })
+      const last = get().timerDay
+      if (last === day) return
+      set({ timerDay: day, startedAt: null, finishedAt: null, usedAnswer: false })
+      // Midnight has passed with the page open: the day before's pieces go back to the tray.
+      if (last !== null) get().resetAll()
     },
 
     toggleSound() {

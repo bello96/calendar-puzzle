@@ -105,10 +105,10 @@ export const FrameTop = memo(function FrameTop() {
         the dates, about as far from that wood's left edge as from its top and bottom. The title is cut
         the size of the months and days under it, the motto a touch smaller, so neither outweighs the other.
       */}
-      <Engraved x={(FRAME.left + FRAME.notchX) / 2 + TITLE_SPACING / 2} y={FRAME.top / 2} size={0.34} weight={800} spacing={TITLE_SPACING} byInk>
+      <Engraved x={(FRAME.left + FRAME.notchX) / 2 + TITLE_SPACING / 2} y={FRAME.top / 2} size={0.28} weight={800} spacing={TITLE_SPACING} byInk>
         日历拼图
       </Engraved>
-      <Engraved x={0.04} y={(7 + FRAME.bottom) / 2} size={0.32} weight={800} anchor="start" spacing={-0.01} byInk>
+      <Engraved x={0.04} y={(7 + FRAME.bottom) / 2} size={0.34} weight={600} anchor="start" spacing={-0.01} byInk>
         每天都要拼一拼
       </Engraved>
     </>

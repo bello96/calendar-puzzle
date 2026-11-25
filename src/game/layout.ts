@@ -1,24 +1,30 @@
+import { BOARD_COLS, BOARD_ROWS } from './board'
 import { bounds, orient, type Point } from './geometry'
 import { PIECE_BY_ID, PIECE_IDS, type PieceId } from './pieces'
 import type { Rect } from './placement'
 import { scatter } from './scatter'
 
 /**
- * The wooden board's outline in cells, measured from the photos, with (0, 0)
- * at the top-left of the cut-out. The upper two rows are one cell narrower,
- * which gives the board its notch at the top right. The top edge, which
- * carries the title, is a little wider than on the real board and the bottom
- * one as narrow as the sides, so the frame looks even.
+ * How wide the wood is around the cut-out, in cells: the same on every side
+ * and round the notch. That is a little wider than on the real board, where
+ * the title is squeezed into a top edge narrower than the rest.
+ */
+const EDGE = 0.6
+
+/**
+ * The wooden board's outline in cells, with (0, 0) at the top-left of the
+ * cut-out. The upper two rows are one cell narrower, which gives the board
+ * its notch at the top right.
  */
 export const FRAME = {
-  left: -0.48,
-  top: -0.64,
-  right: 7.5,
-  bottom: 8.48,
+  left: -EDGE,
+  top: -EDGE,
+  right: BOARD_COLS + EDGE,
+  bottom: BOARD_ROWS + EDGE,
   /** Right edge beside the month rows. */
-  notchX: 6.42,
-  /** Where the board widens again, just above row 2. */
-  notchY: 1.45,
+  notchX: BOARD_COLS - 1 + EDGE,
+  /** Where the board widens again, above row 2. */
+  notchY: 2 - EDGE,
   radius: 0.3,
 } as const
 

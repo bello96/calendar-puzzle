@@ -9,7 +9,7 @@ import {
 } from 'motion/react'
 import { memo, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { bounds, mod, rotatePoint, type Cell, type Point } from '../game/geometry'
-import { outlinePolygon, roundedPath } from '../game/outline'
+import { pieceFace } from '../game/outline'
 import { PIECE_BY_ID, type PieceId } from '../game/pieces'
 import { aimAt } from '../game/placement'
 import { centerOf, isFlipped, shapeOf, takenBy, topLeftOf } from '../game/state'
@@ -17,9 +17,6 @@ import { useGame, type TablePiece } from '../state/store'
 import { play } from './sound'
 import { useTable } from './table-context'
 import { woodMarks } from './WoodDefs'
-
-/** Gap left around each piece, like the kerf of the laser cut. */
-const KERF = 0.035
 
 const SETTLE: ValueAnimationTransition<number> = { type: 'spring', stiffness: 520, damping: 36 }
 const SWING: ValueAnimationTransition<number> = { type: 'spring', stiffness: 380, damping: 25 }
@@ -119,7 +116,7 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
 
   const def = PIECE_BY_ID[id]
   const box = useMemo(() => bounds(def.cells), [def])
-  const face = useMemo(() => roundedPath(outlinePolygon(def.cells, KERF), 0.07, 0.035), [def])
+  const face = useMemo(() => pieceFace(def.cells), [def])
   const marks = useMemo(() => woodMarks(id), [id])
 
   /** Drawn smaller while lying in a phone's tray, full size everywhere else. */

@@ -43,8 +43,11 @@ function ConfirmButton({
   )
 }
 
-/** The date to make, and what you can do about it. */
-export function TopBar() {
+/**
+ * The date to make, and what you can do about it. `onGuide` brings up the
+ * rules; it is handed the 玩法 button when that was pressed from the keyboard.
+ */
+export function TopBar({ onGuide }: { onGuide: (from: HTMLElement | null) => void }) {
   const date = useTargetDate()
   const placed = useGame((s) => PIECE_IDS.filter((id) => s.pieces[id].spot.kind === 'board').length)
   const sound = useGame((s) => s.sound)
@@ -60,13 +63,17 @@ export function TopBar() {
           <span className="hidden sm:inline">已放入 </span>
           {placed} / {PIECE_IDS.length}
         </span>
+        {/* With nothing in the board there is nothing to take back: the button then only scatters the tray afresh, and says so. */}
         <ConfirmButton
           question="确定全部收回？"
           needed={() => PIECE_IDS.some((id) => useGame.getState().pieces[id].spot.kind === 'board')}
           onConfirm={game.resetAll}
         >
-          全部收回
+          {placed > 0 ? '全部收回' : '全部打乱'}
         </ConfirmButton>
+        <Button aria-haspopup="dialog" onClick={(e) => onGuide(e.detail === 0 ? e.currentTarget : null)}>
+          玩法
+        </Button>
         <Button
           aria-label={sound ? '关掉声音' : '打开声音'}
           title={sound ? '关掉声音' : '打开声音'}

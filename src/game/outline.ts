@@ -66,3 +66,11 @@ export function roundedPath(points: readonly Point[], outerRadius: number, inner
   })
   return d + 'Z'
 }
+
+/** Gap left around each piece, like the kerf of the laser cut. */
+const KERF = 0.035
+
+/** The face of a piece of wood covering `cells`, as an SVG path: cut a kerf short all round, its corners eased. */
+export function pieceFace(cells: readonly Cell[]): string {
+  return roundedPath(outlinePolygon(cells, KERF), 0.07, 0.035)
+}

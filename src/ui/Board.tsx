@@ -73,7 +73,7 @@ export function Board() {
 }
 
 /** Everything that never changes: shadow, edge, floor and its engraving. */
-const BoardBody = memo(function BoardBody() {
+export const BoardBody = memo(function BoardBody() {
   return (
     <>
       <path d={FRAME_PATH} transform="translate(0.04 0.2)" fill="rgb(8 22 17 / 0.5)" filter="url(#board-shadow)" />
@@ -88,24 +88,46 @@ const BoardBody = memo(function BoardBody() {
   )
 })
 
+/** The space between the letters of the title, in cells. */
+const TITLE_SPACING = 0.16
+
 /** The top layer of the board, with the cut-out, burnt edges and the engraved title and motto. */
-const FrameTop = memo(function FrameTop() {
+export const FrameTop = memo(function FrameTop() {
   return (
     <>
       <path d={FRAME_PATH + CAVITY_PATH} fillRule="evenodd" fill="var(--color-wood)" filter="url(#frame-depth)" />
       <path d={FRAME_PATH + CAVITY_PATH} fillRule="evenodd" fill="#fff" filter="url(#grain-board)" />
       <path d={CAVITY_PATH} fill="none" stroke="var(--color-burn)" strokeWidth={0.03} strokeOpacity={0.85} />
       <path d={FRAME_PATH} fill="none" stroke="#8a6537" strokeWidth={0.02} strokeOpacity={0.6} />
-      {/* The title in the middle of the top edge, the motto in the middle of the space below the dates. */}
-      <Engraved x={3.36} y={FRAME.top / 2} size={0.27} weight={800} spacing={0.2}>
+      {/*
+        The title in the middle of the top edge, over the six months; set half a letter-space to the
+        right, since its last letter carries a space after it as well. The motto in the wood left below
+        the dates, about as far from that wood's left edge as from its top and bottom. The title is cut
+        the size of the months and days under it, the motto a touch smaller, so neither outweighs the other.
+      */}
+      <Engraved x={(FRAME.left + FRAME.notchX) / 2 + TITLE_SPACING / 2} y={FRAME.top / 2} size={0.34} weight={800} spacing={TITLE_SPACING} byInk>
         日历拼图
       </Engraved>
-      <Engraved x={0.04} y={(7 + FRAME.bottom) / 2} size={0.41} weight={800} anchor="start" spacing={-0.01}>
+      <Engraved x={0.04} y={(7 + FRAME.bottom) / 2} size={0.32} weight={800} anchor="start" spacing={-0.01} byInk>
         每天都要拼一拼
       </Engraved>
     </>
   )
 })
+
+/**
+ * How far the strokes of `text` reach above and below its baseline, in ems, in the font the page is
+ * actually shown in (which differs from one system to the next). Null where that cannot be measured.
+ */
+function inkOf(text: string, weight: number): { above: number; below: number } | null {
+  if (typeof document === 'undefined') return null
+  const pen = document.createElement('canvas').getContext('2d')
+  if (!pen) return null
+  pen.font = `${weight} 100px ${getComputedStyle(document.body).fontFamily}`
+  const m = pen.measureText(text)
+  const ink = { above: m.actualBoundingBoxAscent / 100, below: m.actualBoundingBoxDescent / 100 }
+  return Number.isFinite(ink.above) && Number.isFinite(ink.below) && ink.above + ink.below > 0 ? ink : null
+}
 
 function Engraved({
   x,
@@ -114,6 +136,7 @@ function Engraved({
   weight = 700,
   anchor = 'middle',
   spacing = 0,
+  byInk = false,
   children,
 }: {
   x: number
@@ -122,29 +145,37 @@ function Engraved({
   weight?: number
   anchor?: 'start' | 'middle'
   spacing?: number
+  /**
+   * Put the middle of the strokes themselves at `y`, rather than the middle of the font's line. The
+   * two differ by a pixel or two, which shows when the text sits in a narrow strip of wood.
+   */
+  byInk?: boolean
   children: string
 }) {
+  const ink = useMemo(() => (byInk ? inkOf(children, weight) : null), [byInk, children, weight])
   const common = {
     x,
     fontSize: size,
     fontWeight: weight,
     textAnchor: anchor,
-    dominantBaseline: 'central' as const,
+    dominantBaseline: ink ? ('alphabetic' as const) : ('central' as const),
     letterSpacing: spacing,
   }
+  // With the strokes measured, `at` is where the baseline goes; otherwise the middle of the line.
+  const at = ink ? y + ((ink.above - ink.below) / 2) * size : y
   return (
     <>
-      <text {...common} y={y + 0.014} fill="#fff6e4" fillOpacity={0.55}>
+      <text {...common} y={at + 0.014} fill="#fff6e4" fillOpacity={0.55}>
         {children}
       </text>
-      <text {...common} y={y} fill="var(--color-burn)" fillOpacity={0.9}>
+      <text {...common} y={at} fill="var(--color-burn)" fillOpacity={0.9}>
         {children}
       </text>
     </>
   )
 }
 
-function CellLabel({ cell: [r, c] }: { cell: Cell }) {
+export function CellLabel({ cell: [r, c] }: { cell: Cell }) {
   const label = labelAt(r, c)!
   const x = c + 0.5
   if (label.kind === 'weekday') {
@@ -206,13 +237,28 @@ function loopPath(center: Point, seed: number, scale: number): string {
   return smoothPath(points)
 }
 
-function PenLoop({ cx, cy, seed, delay, twice }: { cx: number; cy: number; seed: number; delay: number; twice: boolean }) {
+export function PenLoop({
+  cx,
+  cy,
+  seed,
+  delay,
+  twice,
+  weight = 0.05,
+}: {
+  cx: number
+  cy: number
+  seed: number
+  delay: number
+  twice: boolean
+  /** How thick the pen is, in cells. */
+  weight?: number
+}) {
   const first = useMemo(() => loopPath({ x: cx, y: cy }, seed, 1), [cx, cy, seed])
   const second = useMemo(() => loopPath({ x: cx, y: cy }, seed + 17, 1.1), [cx, cy, seed])
   const stroke = {
     fill: 'none',
     stroke: 'var(--color-ink)',
-    strokeWidth: 0.05,
+    strokeWidth: weight,
     strokeLinecap: 'round' as const,
     pathLength: 1,
     className: 'pen-stroke',
@@ -229,7 +275,7 @@ function PenLoop({ cx, cy, seed, delay, twice }: { cx: number; cy: number; seed:
 }
 
 /** Where the dragged piece would drop: its outline pencilled onto the floor. */
-function Ghost({ cells }: { cells: Cell[] }) {
+export function Ghost({ cells }: { cells: Cell[] }) {
   const d = useMemo(() => roundedPath(outlinePolygon(cells, 0.05), 0.08, 0.04), [cells])
   return (
     <path

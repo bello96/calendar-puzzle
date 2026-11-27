@@ -69,13 +69,13 @@ export function Guide({ onDone }: { onDone: () => void }) {
         aria-modal="true"
         aria-labelledby="guide-title"
         aria-describedby="guide-step"
-        className="guide-card rise-in m-auto rounded-[10px] bg-mat-deep text-center outline-none"
+        className="guide-card rise-in m-auto rounded-[10px] text-center outline-none"
       >
         {/* The two lines engraved on the board itself. */}
         <h2 id="guide-title" className="guide-title indent-[0.2em] leading-tight font-bold tracking-[0.2em]">
           日历拼图
         </h2>
-        <p className="guide-motto indent-[0.12em] tracking-[0.12em] text-chalk-dim">每天都要拼一拼</p>
+        <p className="guide-motto indent-[0.12em] tracking-[0.12em] text-burn/75">每天都要拼一拼</p>
 
         {/* Started afresh for every page, and when a page is retold for the other kind of pointer. */}
         <div key={`${step}-${touch}`} className="guide-stage relative overflow-hidden rounded-lg" aria-hidden>
@@ -104,10 +104,10 @@ export function Guide({ onDone }: { onDone: () => void }) {
         <div className="guide-foot flex items-center justify-between">
           <ol className="guide-dots flex gap-2 pl-0.5" aria-hidden>
             {STEPS.map((_, i) => (
-              <li key={i} className={`rounded-full ${i === step ? 'bg-chalk' : 'bg-chalk/25'}`} />
+              <li key={i} className={`rounded-full ${i === step ? 'bg-burn' : 'bg-burn/25'}`} />
             ))}
           </ol>
-          <Button tone="solid" className="guide-next" onClick={onward}>
+          <Button tone="deep" className="guide-next" onClick={onward}>
             {last ? '开始' : '下一步'}
           </Button>
         </div>

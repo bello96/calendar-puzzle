@@ -20,6 +20,8 @@
 
   --font-sans: 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans SC',
     'Source Han Sans SC', system-ui, sans-serif;
+  /* A hand: chalk notes on the mat, and the characters cut in a seal */
+  --font-hand: 'Kaiti SC', 'STKaiti', 'KaiTi', '楷体', serif;
 }
 
 html,
@@ -69,6 +71,158 @@ body {
 }
 
 /*
+ * The day made (src/ui/StatusPanel.tsx, src/ui/DayPage.tsx): the day's page of a calendar, cut
+ * from the board's own basswood and stamped 今日已拼 just as the paper flies, and beside it what
+ * there is to say, written on the mat as on a blackboard with a few chalk marks round it.
+ * Everything is sized from the room the panel has (cqw, cqh).
+ */
+.finish-room {
+  container-type: size;
+}
+
+.finish {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(14px, 5.5cqw, 64px);
+  width: 100%;
+  height: 100%;
+}
+
+.finish-words {
+  order: 2;
+  min-width: 0;
+  text-align: left;
+}
+
+.finish-title {
+  font-size: clamp(22px, min(6.2cqw, 8.6cqh), 62px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+}
+
+.finish-underline {
+  display: block;
+  width: min(100%, 6.6em);
+  height: 0.42em;
+  margin-top: 0.02em;
+  overflow: visible;
+  color: var(--color-chalk);
+  opacity: 0.85;
+}
+
+.finish-time {
+  margin-top: 0.7em;
+  font-size: clamp(14px, min(2.4cqw, 3.3cqh), 23px);
+  line-height: 1.3;
+}
+
+/* The figures of the time in the calendar's own numerals. */
+.finish-figure {
+  margin: 0 0.08em;
+  font-family: 'Bodoni 72', Didot, 'Times New Roman', 'Noto Serif', serif;
+  font-size: 2.2em;
+  font-weight: 700;
+  font-variant-numeric: lining-nums tabular-nums;
+  line-height: 1;
+}
+
+/* Under the figures, past 用时, far enough below them for the arrow up to them. */
+.finish-note {
+  position: relative;
+  margin: 0.85em 0 0 2.1em;
+  font-family: var(--font-hand);
+  font-size: clamp(16px, min(2.8cqw, 3.8cqh), 27px);
+  line-height: 1.35;
+  transform: rotate(-3deg);
+  transform-origin: left center;
+}
+
+.finish-arrow {
+  position: absolute;
+  top: -0.8em;
+  left: -1.5em;
+  width: 1.9em;
+  height: 1.7em;
+  overflow: visible;
+  color: var(--color-chalk);
+  opacity: 0.85;
+}
+
+.finish-note-text {
+  animation: guide-fade 450ms ease-out 1.4s both;
+}
+
+/* The sign-off, about the size of the note above it, so the two read as one hand's worth of writing. */
+.finish-next {
+  margin-top: 1.3em;
+  color: rgb(238 241 230 / 0.82);
+  font-size: clamp(13px, min(2.8cqw, 3.9cqh), 28px);
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+}
+
+.day-page {
+  --tilt: -2.5deg;
+  flex: none;
+  order: 1;
+  /* A good share of a wide panel; on a phone's narrow one, as much as leaves room for the words. */
+  width: min(max(40cqw, 170px), 60cqh, 46cqw);
+  transform: rotate(var(--tilt));
+  animation:
+    page-drop 640ms cubic-bezier(0.2, 0.75, 0.3, 1) both,
+    page-thump 240ms ease-out 960ms;
+}
+
+.day-page svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* Red ink soaks into the wood rather than lying on it. */
+.seal {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0.88;
+  mix-blend-mode: multiply;
+  animation: seal-down 300ms 720ms both;
+}
+
+@keyframes page-drop {
+  from {
+    opacity: 0;
+    transform: translate(-4%, -12%) rotate(-11deg);
+  }
+  45% {
+    opacity: 1;
+  }
+}
+
+/* The stamp coming down presses the page into the mat for a moment. */
+@keyframes page-thump {
+  40% {
+    transform: rotate(var(--tilt)) scale(0.982);
+  }
+}
+
+@keyframes seal-down {
+  0% {
+    opacity: 0;
+    transform: rotate(-17deg) scale(2.6);
+    animation-timing-function: cubic-bezier(0.55, 0, 0.9, 0.4);
+  }
+  72% {
+    opacity: 0.88;
+    transform: rotate(1deg) scale(0.93);
+    animation-timing-function: ease-out;
+  }
+}
+
+/*
  * The guide to the rules, brought up with 玩法 in the top bar (src/ui/Guide.tsx).
  * Each step is acted out in a small scene on a patch of the mat, drawn --u px
  * to the unit. The scenes play by themselves, over and over, and move nothing
@@ -76,8 +230,10 @@ body {
  * still is what is shown when motion is turned off.
  */
 
+/* The table goes dark and out of focus behind the guide, so the card stands clear of it. */
 .guide-veil {
-  background: rgb(8 26 19 / 0.72);
+  background: rgb(6 20 15 / 0.58);
+  backdrop-filter: blur(6px) saturate(0.8);
   animation: guide-fade 240ms ease-out both;
 }
 
@@ -115,10 +271,24 @@ body {
   /* Never so narrow that half a sentence has to break, however small a window's height makes the scene. */
   max-width: max(calc(var(--u) * 14 + var(--pad) * 2), 320px);
   padding: var(--pad) var(--pad) calc(var(--pad) - 4px);
+  /*
+   * A board of its own: the same basswood and grain as the board on the table (the board's grain filter,
+   * drawn into the background about a board cell to the unit), its edge showing below it, the words burnt in.
+   */
+  background: var(--color-wood) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='800' viewBox='0 0 10 10'%3E%3Cfilter id='g' x='0' y='0' width='100%25' height='100%25' color-interpolation-filters='sRGB'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.45 11' numOctaves='2' seed='41' result='f'/%3E%3CfeColorMatrix in='f' values='0 0 0 0 0.45 0 0 0 0 0.3 0 0 0 0 0.14 0 0 0 0.5 -0.22' result='l'/%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='2' seed='42' result='b'/%3E%3CfeColorMatrix in='b' values='0 0 0 0 0.55 0 0 0 0 0.38 0 0 0 0 0.18 0 0 0 0.13 -0.05' result='c'/%3E%3CfeMerge%3E%3CfeMergeNode in='c'/%3E%3CfeMergeNode in='l'/%3E%3C/feMerge%3E%3C/filter%3E%3Crect width='10' height='10' filter='url(%23g)' opacity='0.85'/%3E%3C/svg%3E") center / cover;
+  color: var(--color-burn);
   box-shadow:
-    0 0 0 1px rgb(238 241 230 / 0.08),
-    0 16px 36px -8px rgb(8 26 19 / 0.6),
-    0 4px 12px rgb(8 26 19 / 0.3);
+    inset 0 0 0 1px rgb(138 101 55 / 0.45),
+    0 6px 0 var(--color-wood-side),
+    0 28px 56px -14px rgb(0 0 0 / 0.6),
+    0 8px 18px rgb(0 0 0 / 0.25);
+}
+
+/* Burnt in, with the faint lit edge below each cut that the board's lettering has. */
+.guide-title,
+.guide-motto,
+.guide-text {
+  text-shadow: 0 1px 0 rgb(255 246 228 / 0.55);
 }
 
 .guide-title {
@@ -155,9 +325,10 @@ body {
   height: calc(var(--u) * 8);
   margin-top: var(--gap);
   background: var(--color-mat);
+  /* Set into the wood like the board's cavity: a burnt edge, and the wood's shadow falling on it. */
   box-shadow:
-    inset 0 0 0 1px rgb(8 26 19 / 0.3),
-    inset 0 3px 10px rgb(8 26 19 / 0.25);
+    inset 0 0 0 1.5px rgb(74 46 23 / 0.8),
+    inset 0 3px 10px rgb(8 26 19 / 0.35);
 }
 
 /* A narrow screen, a phone held upright: less padding, so that the scene gets what width there is. */
@@ -572,6 +743,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .pen-stroke,
   .rise-in,
+  .day-page,
+  .seal,
+  .finish-note-text,
   .guide-veil,
   .guide-leaving,
   .guide-fade,

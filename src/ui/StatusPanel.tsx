@@ -58,7 +58,7 @@ export function StatusPanel() {
   if (!st.complete || dragging) return null
 
   // Beside the board, the tray. Under it (a phone held upright) the tray is small, so all the mat
-  // there is below the board: the window's width, down to the line of hints along the bottom.
+  // there is below the board: the window's width, down to a little short of its bottom edge.
   const room =
     layout.mode === 'wide'
       ? layout.tray

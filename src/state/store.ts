@@ -2,7 +2,9 @@ import { create } from 'zustand'
 import { bounds, mod, type Cell, type Point } from '../game/geometry'
 import { deal, tableLayout, type Home, type TableLayout } from '../game/layout'
 import { PIECE_IDS, type PieceId } from '../game/pieces'
-import { overlapping, type Drawn } from '../game/stacking'
+import type { Rect } from '../game/placement'
+import { boxAround, intoRoom, type Room } from '../game/room'
+import { cellSquares, overlapping, type Drawn } from '../game/stacking'
 import {
   answerFor,
   cellsOnBoard,
@@ -53,10 +55,11 @@ export interface GameState {
   /** How the table is laid out on this screen. */
   layout: TableLayout
   /**
-   * How far up the table goes on this screen, in cells: the top of the window. That is above the
-   * mat's own top edge, and a loose piece may lie anywhere in between (under the top bar, too).
+   * Where a loose piece may lie on this screen: anywhere in the window short of its edges, which
+   * takes in the mat, the table round it and the empty stretch of the top bar, but not on what is
+   * written in the bar.
    */
-  tableTop: number
+  room: Room
   target: TargetChoice
   activeId: PieceId | null
   draggingId: PieceId | null
@@ -71,8 +74,8 @@ export interface GameState {
 }
 
 export interface GameActions {
-  /** Lay the table out for this window; it reaches up to `tableTop` (no further than the mat, if that is not said). */
-  setLayout(layout: TableLayout, tableTop?: number): void
+  /** Lay the table out for this window, with `room` for loose pieces (just the mat, if that is not said). */
+  setLayout(layout: TableLayout, room?: Room): void
   activate(id: PieceId | null): void
   pickUp(id: PieceId): void
   setGhost(cells: Cell[] | null): void
@@ -171,26 +174,27 @@ function dealPieces(layout: TableLayout, from?: Record<PieceId, TablePiece>, sta
 
 const plain = (pieces: Record<PieceId, TablePiece>): PieceMap => pieces
 
-/**
- * Keep a loose piece on the table, as drawn (pieces in a phone's tray are drawn smaller): within
- * the mat to the sides and below, and up to `top` above it.
- */
-function onTable(p: TablePiece, layout: TableLayout, top: number): TablePiece {
-  if (p.spot.kind !== 'loose') return p
-  const { rows, cols } = bounds(shapeOf(p))
-  const center = { x: p.spot.x + cols / 2, y: p.spot.y + rows / 2 }
-  const s = layout.inTray(center) ? layout.trayScale : 1
-  const { mat } = layout
-  const cx = Math.min(Math.max(center.x, mat.left + (cols * s) / 2), mat.right - (cols * s) / 2)
-  const cy = Math.min(Math.max(center.y, top + (rows * s) / 2), mat.bottom - (rows * s) / 2)
-  if (cx === center.x && cy === center.y) return p
-  return { ...p, spot: { kind: 'loose', x: cx - cols / 2, y: cy - rows / 2 } }
-}
-
 /** The piece as drawn: pieces lying in a phone's tray are drawn smaller. */
 function drawn(p: TablePiece, layout: TableLayout): Drawn {
   return { ...p, scale: p.spot.kind === 'loose' && layout.inTray(centerOf(p)) ? layout.trayScale : 1 }
 }
+
+/**
+ * Keep a loose piece in the room there is for it, moving it no further than that takes. It is
+ * measured as it is drawn, cell by cell: at the slight angle it rests at, and smaller in a
+ * phone's tray. So what is seen of it ends just at the limit, however it lies.
+ */
+function onTable(p: TablePiece, layout: TableLayout, room: Room): TablePiece {
+  if (p.spot.kind !== 'loose') return p
+  const by = intoRoom(cellSquares(drawn(p, layout)).map(boxAround), room)
+  if (by.x === 0 && by.y === 0) return p
+  return { ...p, spot: { kind: 'loose', x: p.spot.x + by.x, y: p.spot.y + by.y } }
+}
+
+/** The room there is before the table has measured its window: the mat, with nothing written over it. */
+const matOf = (layout: TableLayout): Room => ({ within: layout.mat, clear: [] })
+
+const sameRect = (a: Rect, b: Rect) => a.left === b.left && a.top === b.top && a.right === b.right && a.bottom === b.bottom
 
 /** Place a loose piece so its centre stays put after its box changes shape. */
 function recentre(p: TablePiece, center: Point): TablePiece {
@@ -208,7 +212,7 @@ export const useGame = create<Store>()((set, get) => {
   /** Apply a pure rules update to one piece, keeping its table extras, and bring it to the top. */
   const update = (id: PieceId, next: PieceMap, extra: Partial<TablePiece>) => {
     const pieces = get().pieces
-    const moved = onTable({ ...pieces[id], ...next[id], ...extra }, get().layout, get().tableTop)
+    const moved = onTable({ ...pieces[id], ...next[id], ...extra }, get().layout, get().room)
     set({ pieces: raised({ ...pieces, [id]: moved }, id) })
   }
   const begin = () => {
@@ -226,7 +230,7 @@ export const useGame = create<Store>()((set, get) => {
   return {
     pieces: dealPieces(firstLayout),
     layout: firstLayout,
-    tableTop: firstLayout.mat.top,
+    room: matOf(firstLayout),
     target: { kind: 'today' },
     activeId: null,
     draggingId: null,
@@ -237,20 +241,24 @@ export const useGame = create<Store>()((set, get) => {
     finishedAt: null,
     usedAnswer: false,
 
-    setLayout(layout, tableTop = layout.mat.top) {
+    setLayout(layout, room = matOf(layout)) {
       const prev = get().layout
       if (layout === prev) {
-        if (tableTop === get().tableTop) return
-        // The same table in a window of another size: whatever lay above the mat stays in view.
+        if (room === get().room) return
+        // The same table with other room on it: whatever no longer lies in the room is brought back
+        // into it. In a window of another size that is done at once, as all the table moves then.
+        // If only the words in the bar have changed (a button asking its question is wider for it),
+        // a piece they now reach slides out from under them.
+        const motion: Motion = { kind: sameRect(room.within, get().room.within) ? 'settle' : 'jump' }
         const pieces = { ...get().pieces }
         let moved = false
         for (const id of PIECE_IDS) {
-          const kept = onTable(pieces[id], layout, tableTop)
+          const kept = onTable(pieces[id], layout, room)
           if (kept === pieces[id]) continue
-          pieces[id] = { ...kept, motion: { kind: 'jump' } }
+          pieces[id] = { ...kept, motion }
           moved = true
         }
-        set(moved ? { tableTop, pieces } : { tableTop })
+        set(moved ? { room, pieces } : { room })
         return
       }
       const pieces = { ...get().pieces }
@@ -265,13 +273,13 @@ export const useGame = create<Store>()((set, get) => {
           const at = prev.inTray(c)
             ? { x: layout.trayOrigin.x + (c.x - prev.trayOrigin.x) * k, y: layout.trayOrigin.y + (c.y - prev.trayOrigin.y) * k }
             : c
-          pieces[id] = onTable({ ...recentre(p, at), motion: { kind: 'jump' } }, layout, tableTop)
+          pieces[id] = onTable({ ...recentre(p, at), motion: { kind: 'jump' } }, layout, room)
         } else {
           // A different tray (the screen turned): the loose pieces are dealt into it afresh.
           pieces[id] = { ...laidAt(p, homes[id]), motion: { kind: 'jump' } }
         }
       }
-      set({ layout, tableTop, pieces })
+      set({ layout, room, pieces })
     },
 
     activate(id) {

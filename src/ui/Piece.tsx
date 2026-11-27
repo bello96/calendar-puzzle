@@ -345,7 +345,11 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
     inHand.turn = turnInHand
   }
 
-  /** Let go: drop the piece where the pointer is. */
+  /**
+   * Let go: drop the piece where the hand is, even if that is past the edge of the window or on
+   * the words in the top bar. The store has it back from there to where it may lie, measured at
+   * the size it will be drawn, and it springs to that spot.
+   */
   const endDrag = (s: Session) => {
     // The handler stored at pick-up belongs to an older render, so clear it outright.
     inHand.turn = null
@@ -353,13 +357,7 @@ export const Piece = memo(function Piece({ id }: { id: PieceId }) {
     if (pressed === id) pressed = null
     const state = useGame.getState()
     const { rows, cols } = bounds(shapeOf(state.pieces[id]))
-    // Never leave a piece out of reach.
-    const v = viewRef.current.visible
-    const center = {
-      x: Math.min(Math.max(s.pointer.x + s.offsetGoal.x, v.left + cols / 2 - 0.4), v.right - cols / 2 + 0.4),
-      y: Math.min(Math.max(s.pointer.y + s.offsetGoal.y, v.top + rows / 2 - 0.4), v.bottom - rows / 2 + 0.4),
-    }
-    state.release(id, { x: center.x - cols / 2, y: center.y - rows / 2 })
+    state.release(id, { x: s.pointer.x + s.offsetGoal.x - cols / 2, y: s.pointer.y + s.offsetGoal.y - rows / 2 })
   }
 
   /**

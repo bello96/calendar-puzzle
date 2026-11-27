@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { chooseLayout } from '../game/layout'
 import { PIECE_IDS } from '../game/pieces'
+import type { Rect } from '../game/placement'
+import type { Room } from '../game/room'
 import { useGame } from '../state/store'
 import { Board } from './Board'
 import { NoticeToast } from './NoticeToast'
@@ -9,14 +11,19 @@ import { PieceActions } from './PieceActions'
 import { StatusPanel } from './StatusPanel'
 import { TableContext, type TableView } from './table-context'
 
+/**
+ * The least the mat keeps from the window's edges, in px. A loose piece keeps as much: from all
+ * four edges alike, and from what is written in the top bar.
+ */
 const GUTTER = 12
 
 /**
  * The cutting mat: board on one side, loose pieces on the other, scaled to fit the window.
  * It fills the window; the top bar lies over its first `bar` px. The board and the tray are
- * laid out clear of the bar, but the mat runs on under it, and a piece may be put there too.
+ * laid out clear of the bar, but the mat runs on under it, and a piece may be put there too,
+ * only not on `words`: the boxes of what is written in the bar, in px from the table's corner.
  */
-export function Table({ bar }: { bar: number }) {
+export function Table({ bar, words }: { bar: number; words: readonly Rect[] }) {
   const ref = useRef<HTMLDivElement>(null)
   /** Where the table is on screen; measured when it resizes and at the start of each press. */
   const rect = useRef<DOMRect | null>(null)
@@ -60,12 +67,28 @@ export function Table({ bar }: { bar: number }) {
     }
   }, [size, bar])
 
-  // The store is told the layout, and how far up the window the table goes: to its top edge.
+  // Where a loose piece may lie: anywhere in the window but for a gutter round its edges, the same
+  // on all four sides whatever the window's shape, and the same gutter round each thing in the bar.
+  const room = useMemo<Room | null>(() => {
+    if (!view) return null
+    const { cell, origin, visible } = view
+    const gutter = GUTTER / cell
+    return {
+      within: { left: visible.left + gutter, top: visible.top + gutter, right: visible.right - gutter, bottom: visible.bottom - gutter },
+      clear: words.map((box) => ({
+        left: origin.x + box.left / cell - gutter,
+        top: origin.y + box.top / cell - gutter,
+        right: origin.x + box.right / cell + gutter,
+        bottom: origin.y + box.bottom / cell + gutter,
+      })),
+    }
+  }, [view, words])
+
+  // The store is told the layout, and the room there is for loose pieces.
   const layout = view?.layout
-  const tableTop = view?.visible.top
   useEffect(() => {
-    if (layout) setLayout(layout, tableTop)
-  }, [layout, tableTop, setLayout])
+    if (layout && room) setLayout(layout, room)
+  }, [layout, room, setLayout])
 
   // Handles for automated browser checks; stripped from production builds.
   useEffect(() => {
@@ -119,32 +142,8 @@ export function Table({ bar }: { bar: number }) {
           <StatusPanel />
           {touch && <PieceActions />}
           <NoticeToast />
-          <ControlsHint touch={touch} />
         </TableContext.Provider>
       )}
     </div>
-  )
-}
-
-function ControlsHint({ touch }: { touch: boolean }) {
-  const items = touch
-    ? [
-        ['拖动', '摆放'],
-        ['轻点', '旋转'],
-        ['拖着时另一指轻点', '也能旋转'],
-      ]
-    : [
-        ['拖动', '摆放'],
-        ['左键单击', '旋转'],
-        ['右键单击', '翻面'],
-      ]
-  return (
-    <p className="pointer-events-none absolute bottom-2 left-4 flex flex-wrap gap-x-5 gap-y-1 text-[13px] leading-5 text-chalk-dim sm:left-6">
-      {items.map(([how, what]) => (
-        <span key={how}>
-          <span className="text-chalk">{how}</span> {what}
-        </span>
-      ))}
-    </p>
   )
 }
